@@ -62,7 +62,7 @@ export default function BulkImportPage() {
     }
   };
 
-  // 🚀 อัปโหลดเข้า Supabase
+// 🚀 อัปโหลดเข้า Supabase
   const uploadToSupabase = async () => {
     if (parsedData.length === 0) return;
     setIsUploading(true);
@@ -124,19 +124,26 @@ export default function BulkImportPage() {
       for (const key of productKeys) {
         const group = groups[key];
 
-        // Step A: Upsert Products (ตารางแม่)
+        // Step A: Upsert Products (ตารางแม่) - 🌟 จุดที่แก้ให้มันทับตัวแม่
         const { data: prodData, error: prodError } = await supabase
           .from("products")
           .upsert(
-            { name: group.name, collection: group.collection, image_url: group.image_url },
-            { onConflict: "name, collection" }
+            { 
+              name: group.name, 
+              collection: group.collection, 
+              image_url: group.image_url 
+            },
+            { 
+              onConflict: "name,collection", // 👈 บอกให้ Supabase เช็คจาก 2 คอลัมน์นี้
+              ignoreDuplicates: false // 👈 บังคับให้อัปเดตข้อมูลทับของเดิมเสมอ
+            }
           )
           .select("id")
           .single();
 
         if (prodError) {
           console.error(`❌ Error Product [${group.name}]:`, prodError.message);
-          continue;
+          continue; // ถ้าอัปเดตแม่ไม่สำเร็จ ให้ข้ามไปลูกตัวอื่น
         }
 
         const productId = prodData.id;
@@ -146,7 +153,10 @@ export default function BulkImportPage() {
 
         const { error: varError } = await supabase
           .from("product_variants")
-          .upsert(variantsPayload, { onConflict: "sku" });
+          .upsert(variantsPayload, { 
+            onConflict: "sku",
+            ignoreDuplicates: false // 👈 อัปเดตลูกทับของเดิมเสมอ
+          });
 
         if (varError) {
           console.error(`❌ Error Variants [${group.name}]:`, varError.message);
@@ -155,8 +165,8 @@ export default function BulkImportPage() {
         }
       }
 
-      setStatus({ type: "success", message: `นำเข้าข้อมูลสินค้าสำเร็จ ${successCount} กลุ่มสินค้า (พร้อมอัปเดตตัวเลือกเรียบร้อย)` });
-      setParsedData([]); // ล้างหน้าจอหลังเสร็จ
+      setStatus({ type: "success", message: `นำเข้าข้อมูลสินค้าสำเร็จ ${successCount} กลุ่มสินค้า (พร้อมอัปเดตข้อมูลแม่-ลูกเรียบร้อย)` });
+      setParsedData([]); 
     } catch (error: any) {
       console.error(error);
       setStatus({ type: "error", message: `เกิดข้อผิดพลาด: ${error.message}` });
@@ -164,7 +174,6 @@ export default function BulkImportPage() {
       setIsUploading(false);
     }
   };
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
