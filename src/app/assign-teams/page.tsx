@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Users, UserPlus, CheckCircle2, XCircle, Loader2,Image as ImageIcon } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -130,7 +130,7 @@ export default function AssignTeamsPage() {
                   <tr>
                     <td colSpan={4} className="py-16 text-center text-slate-500">
                       <div className="flex justify-center items-center gap-3">
-                         <Loader2 className="animate-spin text-emerald-500" size={24} />
+                         <Loader2 size={18} className="animate-spin text-blue-500" />
                          กำลังโหลดข้อมูลพนักงาน...
                       </div>
                     </td>
@@ -170,21 +170,27 @@ export default function AssignTeamsPage() {
                       </td>
 
                       {/* ⏳ สถานะการบันทึก (Real-time Feedback) */}
-                      <td className="py-4 px-6 text-center">
-                        <div className="flex justify-center items-center h-full">
-                          {updatingId === user.id ? (
-                            <Loader2 size={18} className="animate-spin text-blue-500" title="กำลังอัปเดต..." />
-                          ) : successId === user.id ? (
-                            <CheckCircle2 size={18} className="text-emerald-500" title="อัปเดตสำเร็จ" />
-                          ) : errorId === user.id ? (
-                            <XCircle size={18} className="text-red-500" title="เกิดข้อผิดพลาด" />
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                              พร้อม
-                            </span>
-                          )}
-                        </div>
-                      </td>
+<td className="py-4 px-6 text-center">
+  <div className="flex justify-center items-center h-full">
+    {updatingId === user.id ? (
+      <div title="กำลังอัปเดต...">
+        <Loader2 size={18} className="animate-spin text-blue-500" />
+      </div>
+    ) : successId === user.id ? (
+      <div title="อัปเดตสำเร็จ">
+        <CheckCircle2 size={18} className="text-emerald-500" />
+      </div>
+    ) : errorId === user.id ? (
+      <div title="เกิดข้อผิดพลาด">
+        <XCircle size={18} className="text-red-500" />
+      </div>
+    ) : (
+      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+        พร้อม
+      </span>
+    )}
+  </div>
+</td>
                     </tr>
                   ))
                 )}

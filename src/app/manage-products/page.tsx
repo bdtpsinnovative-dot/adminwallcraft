@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Search, Edit, Trash2, Package, Plus, ArrowLeft } from 'lucide-react';
+import { Search, Edit, Trash2, Package, Plus, ArrowLeft, Image as ImageIcon} from 'lucide-react';
 
 export default function ManageProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -156,7 +156,9 @@ export default function ManageProductsPage() {
                           {product.image_url ? (
                             <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
                           ) : (
-                            <ImageIcon size={20} className="text-slate-300" />
+                            <div title="รูปภาพสินค้า">
+  <ImageIcon size={20} className="text-slate-300" />
+</div>
                           )}
                         </div>
                       </td>
