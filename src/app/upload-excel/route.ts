@@ -10,14 +10,14 @@ const supabase = createClient(
 export async function POST(req: Request) {
   try {
     const { excelData } = await req.json();
-
+    
     const groupedOrders: Record<string, any> = {};
 
     for (const row of excelData) {
       const customerName = row['Customer Name'] || '-';
       const phone = row['Contact'] || '-'; 
       const orderKey = `${customerName}_${phone}`; 
-
+      
       // 🌟 ดักจับทุกรูปแบบคำผิดและคำที่โดนตัด (แก้ปัญหาพิกเซลต่อพิกเซลตามรูปของพี่)
       const accDev = row['Account Developer'] || row['Account Devoloper'] || null;
       const conDev = row['Contact Developer'] || row['Contact Devoloper'] || null;
