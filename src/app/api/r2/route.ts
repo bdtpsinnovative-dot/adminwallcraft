@@ -22,16 +22,35 @@ export async function GET(request: Request) {
     // 🌟 รับค่าโฟลเดอร์จากหน้าเว็บ ถ้าไม่ส่งมาให้ใช้ master_assets เป็นค่าเริ่มต้น
     const folder = searchParams.get('folder') || 'master_assets'; 
 
-    const command = new ListObjectsV2Command({ 
-      Bucket: BUCKET_NAME,
-      Prefix: `${folder}/` 
-    });
-    const response = await s3Client.send(command);
+    let allFiles: any[] = [];
+    let isTruncated = true;
+    let continuationToken: string | undefined = undefined;
+
+    // 🌟 พระเอกอยู่ตรงนี้: วนลูปดึงรูปจนกว่าจะหมดถัง (แก้ปัญหาลิมิต 1,000 รูป)
+    while (isTruncated) {
+      const command = new ListObjectsV2Command({ 
+        Bucket: BUCKET_NAME,
+        Prefix: `${folder}/`,
+        ContinuationToken: continuationToken // ส่ง Token เพื่อขอดึงหน้าถัดไป
+      });
+      const response = await s3Client.send(command);
+      
+      if (response.Contents) {
+        allFiles.push(...response.Contents);
+      }
+      
+      // เช็กว่ายังมีรูปเหลือในถังอีกไหม ถ้ามีให้ดึงต่อ
+      isTruncated = response.IsTruncated ?? false;
+      continuationToken = response.NextContinuationToken;
+    }
     
-    let files = response.Contents || [];
-    files = files.filter(file => file.Key !== `${folder}/`);
+    // กรองเอาชื่อโฟลเดอร์เปล่าๆ ออก
+    let files = allFiles.filter(file => file.Key !== `${folder}/`);
+    
+    // เรียงลำดับจากใหม่ไปเก่า (อิงจากเวลา LastModified)
     files.sort((a, b) => (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0));
 
+    // ตัดแบ่งส่งให้หน้าเว็บ (Pagination)
     const paginatedFiles = files.slice(offset, offset + limit);
 
     const images = paginatedFiles.map(file => {
