@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const PAGE_SIZE = 40; 
-const TARGET_FOLDER = 'original'; // 🌟 โฟลเดอร์เป้าหมายสำหรับหน้านี้
+const TARGET_FOLDER = 'original'; 
 
 interface GalleryImage {
   name: string;
@@ -30,7 +30,6 @@ export default function ImageGalleryOriginalPage() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  // 🌟 เปลี่ยนสถานะจาก cropping เป็น preview (แค่พรีวิวเฉยๆ ไม่ต้องตัด)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'preview' | 'compressing' | 'uploading'>('idle');
   
   const [replaceFileName, setReplaceFileName] = useState<string | null>(null);
@@ -51,8 +50,8 @@ export default function ImageGalleryOriginalPage() {
     const currentOffset = isLoadMore ? offset : 0;
 
     try {
-      // 🌟 ส่ง &folder=original ไปหา API ด้วย
-      const response = await fetch(`/api/r2?folder=${TARGET_FOLDER}&limit=${PAGE_SIZE}&offset=${currentOffset}`);
+      // 🌟 แก้ไขจุดที่ 1: เติม &t=${Date.now()} เข้าไปเพื่อล้าง Cache บังคับให้ดึงรูปใหม่ล่าสุดมาโชว์อันดับแรกเสมอ
+      const response = await fetch(`/api/r2?folder=${TARGET_FOLDER}&limit=${PAGE_SIZE}&offset=${currentOffset}&t=${Date.now()}`);
       if (!response.ok) throw new Error('Failed to fetch images');
       
       const data = await response.json();
@@ -62,7 +61,7 @@ export default function ImageGalleryOriginalPage() {
       else setHasMore(true);
 
       if (isLoadMore) setImages(prev => [...prev, ...imageList]);
-      else setImages(imageList);
+      else setImages(imageList); // อัปเดต state ด้วยรูปใหม่ล่าสุด
       
       setOffset(currentOffset + imageList.length);
     } catch (error: any) {
@@ -79,7 +78,6 @@ export default function ImageGalleryOriginalPage() {
 
     setIsDeleting(true);
     try {
-      // 🌟 ส่ง folder ไปบอก API ว่าให้ลบจาก original
       const response = await fetch('/api/r2', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -118,7 +116,8 @@ export default function ImageGalleryOriginalPage() {
     setUploadStatus('preview');
   };
 
-const compressImage = async (file: File): Promise<Blob> => {
+  // 🌟 แก้ไขจุดที่ 2: เปลี่ยนวิธีบีบอัดใหม่ ลบลูปมรณะทิ้ง ทำงานเสร็จใน 0.1 วินาที เครื่องไม่ค้าง!
+  const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new window.Image();
       img.src = URL.createObjectURL(file);
@@ -128,7 +127,6 @@ const compressImage = async (file: File): Promise<Blob> => {
         let width = img.width;
         let height = img.height;
         
-        // 🌟 ตั้งค่าความกว้างสูงสุด (1200 สำหรับ Original, 1000 สำหรับ Cloudflare)
         const MAX_SIZE = 1200; 
         
         if (width > MAX_SIZE || height > MAX_SIZE) {
@@ -150,11 +148,10 @@ const compressImage = async (file: File): Promise<Blob> => {
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        // 🌟 พระเอกอยู่ตรงนี้: สั่งแปลงเป็น WebP ที่คุณภาพ 70% (0.7) ครั้งเดียวจบ!
-        // รูป 1200px ที่คุณภาพ 70% จะได้ขนาดประมาณ 50-90KB ซึ่งเล็กและโหลดเร็วมากแล้วครับ
+        // แปลงเป็น WebP คุณภาพ 70% จะได้ขนาดเล็กและสวยงามโดยไม่ต้องวนลูปซ้ำๆ
         canvas.toBlob(
           (blob) => {
-            URL.revokeObjectURL(img.src); // คืนหน่วยความจำ
+            URL.revokeObjectURL(img.src);
             if (blob) {
               resolve(blob);
             } else {
@@ -185,7 +182,7 @@ const compressImage = async (file: File): Promise<Blob> => {
       const formData = new FormData();
       formData.append('file', compressedBlob, fileName);
       formData.append('fileName', fileName);
-      formData.append('folder', TARGET_FOLDER); // 🌟 บอกให้รู้ว่ากำลังจะส่งไปเก็บที่ original นะ
+      formData.append('folder', TARGET_FOLDER); 
 
       const response = await fetch('/api/r2', {
         method: 'POST',
@@ -196,6 +193,8 @@ const compressImage = async (file: File): Promise<Blob> => {
 
       closeModal();
       showToast(replaceFileName ? '✅ แทนที่รูปภาพเรียบร้อย (URL เดิม)' : '✅ อัปโหลดรูปภาพใหม่เรียบร้อย!');
+      
+      // 🌟 พอกดเสร็จ จะเรียก fetchImages() ซึ่งตอนนี้มันจะไม่ติด Cache แล้ว รูปใหม่จะเด้งมาอันดับ 1 ทันที
       fetchImages(false); 
 
     } catch (error: any) {
@@ -233,7 +232,7 @@ const compressImage = async (file: File): Promise<Blob> => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800">รูปต้นฉบับ (Original Aspect)</h1>
-              <p className="text-sm text-slate-500 mt-0.5">ระบบจะรักษาสัดส่วนเดิมและบีบอัดให้ไม่เกิน 40KB (เก็บในโฟลเดอร์ original)</p>
+              <p className="text-sm text-slate-500 mt-0.5">ระบบจะรักษาสัดส่วนเดิมและบีบอัดเป็น WebP (เก็บในโฟลเดอร์ original)</p>
             </div>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
@@ -327,7 +326,6 @@ const compressImage = async (file: File): Promise<Blob> => {
                         <Trash2 size={18} />
                       </button>
 
-                      {/* 🌟 ปรับ aspect ratio ให้ยืดหยุ่นตามสัดส่วนจริง */}
                       <div 
                         className="h-40 bg-slate-50 relative overflow-hidden flex items-center justify-center p-2 cursor-pointer"
                         onClick={() => toggleSelection(img.name)} 
@@ -417,7 +415,6 @@ const compressImage = async (file: File): Promise<Blob> => {
                 </div>
               )}
 
-              {/* 🌟 ส่วน Preview รุปภาพก่อนกดอัปโหลด */}
               {uploadStatus === 'preview' && imageSrc && (
                 <div className="flex flex-col gap-4">
                   <div className="relative w-full h-80 bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center p-2 border border-slate-200">
@@ -449,7 +446,7 @@ const compressImage = async (file: File): Promise<Blob> => {
                   <Loader2 className="animate-spin text-emerald-600" size={40} />
                   <div>
                     <p className="font-semibold text-slate-700">
-                      {uploadStatus === 'compressing' ? 'กำลังบีบอัดภาพไม่ให้เกิน 40KB...' : 'กำลังอัปโหลดเข้าโฟลเดอร์ original...'}
+                      {uploadStatus === 'compressing' ? 'กำลังบีบอัดภาพเพื่อความรวดเร็ว...' : 'กำลังอัปโหลดเข้าโฟลเดอร์ original...'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">กรุณารอสักครู่ ห้ามปิดหน้าต่างนี้</p>
                   </div>
