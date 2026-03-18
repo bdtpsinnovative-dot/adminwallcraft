@@ -118,7 +118,7 @@ export default function ImageGalleryOriginalPage() {
     setUploadStatus('preview');
   };
 
-  const compressImage = async (file: File): Promise<Blob> => {
+const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new window.Image();
       img.src = URL.createObjectURL(file);
@@ -128,7 +128,7 @@ export default function ImageGalleryOriginalPage() {
         let width = img.width;
         let height = img.height;
         
-        // 🌟 เพิ่มเป็น 1200px เผื่อรูปกว้าง/ยาวพิเศษ ภาพจะได้ชัดขึ้นหน่อย
+        // 🌟 ตั้งค่าความกว้างสูงสุด (1200 สำหรับ Original, 1000 สำหรับ Cloudflare)
         const MAX_SIZE = 1200; 
         
         if (width > MAX_SIZE || height > MAX_SIZE) {
@@ -150,44 +150,20 @@ export default function ImageGalleryOriginalPage() {
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        let quality = 0.8; 
-        let blob: Blob | null = null;
-        const TARGET_SIZE_BYTES = 40 * 1024; // 🌟 ขยายเป้าหมายเป็น 40KB ตามสั่งครับนาย
-        
-        const tryCompress = async (q: number, currentWidth: number, currentHeight: number): Promise<Blob> => {
-          if (currentWidth !== width || currentHeight !== height) {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = currentWidth;
-            tempCanvas.height = currentHeight;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx?.drawImage(canvas, 0, 0, currentWidth, currentHeight);
-            return new Promise((r) => tempCanvas.toBlob((b) => r(b!), 'image/webp', q));
-          }
-          return new Promise((r) => canvas.toBlob((b) => r(b!), 'image/webp', q));
-        };
-
-        let currentScale = 1;
-
-        do {
-          const currentW = Math.floor(width * currentScale);
-          const currentH = Math.floor(height * currentScale);
-          
-          blob = await tryCompress(quality, currentW, currentH);
-          
-          if (blob.size > TARGET_SIZE_BYTES) {
-            quality -= 0.1;
-            if (quality < 0.3) {
-              quality = 0.5; 
-              currentScale -= 0.1; 
-              if (currentScale < 0.2) break; 
+        // 🌟 พระเอกอยู่ตรงนี้: สั่งแปลงเป็น WebP ที่คุณภาพ 70% (0.7) ครั้งเดียวจบ!
+        // รูป 1200px ที่คุณภาพ 70% จะได้ขนาดประมาณ 50-90KB ซึ่งเล็กและโหลดเร็วมากแล้วครับ
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(img.src); // คืนหน่วยความจำ
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Compression failed"));
             }
-          } else {
-            break; 
-          }
-        } while (true);
-
-        URL.revokeObjectURL(img.src);
-        resolve(blob);
+          }, 
+          'image/webp', 
+          0.7 
+        );
       };
       
       img.onerror = () => {
