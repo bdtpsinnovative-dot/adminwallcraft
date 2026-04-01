@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
-  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Crown
+  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Crown, Database
 } from 'lucide-react';
 
 import DashboardCharts from '@/components/DashboardCharts';
@@ -10,29 +10,43 @@ import AiChatAssistant from '@/components/AiChatAssistant';
 
 export const dynamic = 'force-dynamic';
 
-// 🔥 จุดที่ 1: รับค่า searchParams จาก URL ที่ปฏิทินส่งมาให้
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { start?: string; end?: string; range?: string };
+  searchParams: { 
+    start?: string; end?: string; range?: string;
+    sales?: string; projectType?: string; productCategory?: string;
+    minArea?: string; maxArea?: string; source?: string;
+  };
 }) {
-  // รองรับ Next.js ทุกเวอร์ชัน (กันแครช)
   const params = await Promise.resolve(searchParams);
 
-  // --- 1. ดึงชื่อเซลส์ทั้งหมดมารอไว้ ---
-  const { data: profiles } = await supabase.from('profiles').select('id, full_name');
+  // --- 1. ดึง Master Data มารอไว้ทั้งหมด ---
+  const [
+    { data: profiles },
+    { data: projectTypes },
+    { data: productCategories }
+  ] = await Promise.all([
+    supabase.from('profiles').select('id, full_name'),
+    supabase.from('project_types').select('id, name'),
+    supabase.from('product_categories').select('id, name')
+  ]);
+
   const profileMap: Record<string, string> = {};
   profiles?.forEach(p => { profileMap[p.id] = p.full_name; });
 
-  // 🔥 จุดที่ 2: เอาวันที่เจ้านายเลือก มาใส่เวลาให้ครอบคลุมทั้งวัน (Timezone ไทย)
+  // --- 2. จัดการตัวแปร Filter ---
   let startIso = '';
   let endIso = '';
-  if (params?.start) {
-    startIso = new Date(`${params.start}T00:00:00+07:00`).toISOString();
-  }
-  if (params?.end) {
-    endIso = new Date(`${params.end}T23:59:59.999+07:00`).toISOString();
-  }
+  if (params?.start) startIso = new Date(`${params.start}T00:00:00+07:00`).toISOString();
+  if (params?.end) endIso = new Date(`${params.end}T23:59:59.999+07:00`).toISOString();
+
+  const filterSales = params?.sales || 'ALL';
+  const filterProjectType = params?.projectType || 'ALL';
+  const filterProductCategory = params?.productCategory || 'ALL';
+  const filterSource = params?.source || 'ALL'; 
+  const minArea = params?.minArea || '';
+  const maxArea = params?.maxArea || '';
 
   // --- 3. ดึงข้อมูลโปรเจกต์ ---
   let allActiveProjects: any[] = [];
@@ -44,10 +58,10 @@ export default async function DashboardPage({
     let query = supabase
       .from('order_item_projects')
       .select(`
-        id, project_name, area_sqm, created_at, is_important,
+        id, project_name, area_sqm, created_at, is_important, project_type_id,
         account_developer, account_architecture, account_interior, account_contractor,
         order_items (
-          id, interest_level, images,
+          id, interest_level, images, product_category_id,
           orders (
             id, customer_name, phone, user_id, is_synced, audit_log, source
           )
@@ -57,14 +71,16 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .range(startRow, startRow + step - 1);
 
-    // 🔥 จุดที่ 3: สั่ง Supabase ให้กรองข้อมูลตามวันที่เจ้านายเลือกทันที!
     if (startIso) query = query.gte('created_at', startIso);
     if (endIso) query = query.lte('created_at', endIso);
+    if (minArea) query = query.gte('area_sqm', minArea);
+    if (maxArea) query = query.lte('area_sqm', maxArea);
+    if (filterProjectType !== 'ALL') query = query.eq('project_type_id', filterProjectType);
 
     const { data, error } = await query;
 
     if (error) {
-      console.error("🔥 Dashboard Fetch Error Message:", error.message);
+      console.error("🔥 Dashboard Fetch Error:", error.message);
       break;
     }
     if (data && data.length > 0) {
@@ -76,9 +92,24 @@ export default async function DashboardPage({
     }
   }
 
-  // --- 4. ประมวลผล Data มหาศาล ---
-  const activeProjectsCount = allActiveProjects.length;
-  const totalAreaSqm = allActiveProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
+  // 🔥 กรองข้อมูล
+  const filteredProjects = allActiveProjects.filter(proj => {
+    const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
+    const order = item?.orders;
+    
+    if (filterSales !== 'ALL' && order?.user_id !== filterSales) return false;
+    if (filterProductCategory !== 'ALL' && item?.product_category_id !== filterProductCategory) return false;
+    
+    const isImported = order?.audit_log === null || order?.audit_log === undefined;
+    const data_source = isImported ? "IMPORT" : "APP";
+    if (filterSource !== 'ALL' && data_source !== filterSource) return false;
+    
+    return true;
+  });
+
+  // --- 4. ประมวลผล Data ---
+  const activeProjectsCount = filteredProjects.length;
+  const totalAreaSqm = filteredProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
 
   const nowUTC = new Date();
   const thaiTime = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
@@ -96,16 +127,10 @@ export default async function DashboardPage({
   
   let sourceMobile = 0, sourceWeb = 0, sourceCSV = 0;
   
-  let intVeryHigh = 0; 
-  let intHigh = 0;     
-  let intMedium = 0;   
-  let intFollow = 0;   
-  let intLow = 0;      
-  let intNull = 0;     
-
+  let intVeryHigh = 0, intHigh = 0, intMedium = 0, intFollow = 0, intLow = 0, intNull = 0; 
   let devCount = 0, archCount = 0, intCount = 0, contCount = 0;
 
-  allActiveProjects.forEach(proj => {
+  filteredProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = orderItem?.orders;
     
@@ -122,19 +147,12 @@ export default async function DashboardPage({
     else sourceMobile += 1;
 
     const interest = orderItem?.interest_level || '';
-    if (interest.includes('สนใจมาก (มีโครงการ')) {
-      intVeryHigh++;
-    } else if (interest.includes('สนใจมาก')) { 
-      intHigh++;
-    } else if (interest.includes('สนใจปานกลาง')) {
-      intMedium++;
-    } else if (interest.includes('ติดตามงาน')) {
-      intFollow++;
-    } else if (interest.includes('สนใจน้อย')) { 
-      intLow++;
-    } else {
-      intNull++; 
-    }
+    if (interest.includes('สนใจมาก (มีโครงการ')) intVeryHigh++;
+    else if (interest.includes('สนใจมาก')) intHigh++;
+    else if (interest.includes('สนใจปานกลาง')) intMedium++;
+    else if (interest.includes('ติดตามงาน')) intFollow++;
+    else if (interest.includes('สนใจน้อย')) intLow++;
+    else intNull++; 
 
     if (proj.account_developer) devCount++;
     if (proj.account_architecture) archCount++;
@@ -173,8 +191,13 @@ export default async function DashboardPage({
   const pendingSync = pendingSyncOrderIds.size;
 
   const lineChartData = Object.values(dailyCountMap).sort((a, b) => a.timestamp - b.timestamp).slice(-14).map(i => ({ date: i.date, count: i.count }));
+  
+  // 🔥 คำนวณเปอร์เซ็นต์สำหรับ Source Data
+  const totalSource = sourceMobile + sourceCSV + sourceWeb;
   const sourceChartData = [
-    { name: 'Mobile App', value: sourceMobile }, { name: 'CSV Upload', value: sourceCSV }, { name: 'Web Portal', value: sourceWeb }
+    { name: `Mobile App (${totalSource > 0 ? Math.round((sourceMobile / totalSource) * 100) : 0}%)`, value: sourceMobile },
+    { name: `CSV Upload (${totalSource > 0 ? Math.round((sourceCSV / totalSource) * 100) : 0}%)`, value: sourceCSV },
+    { name: `Web Portal (${totalSource > 0 ? Math.round((sourceWeb / totalSource) * 100) : 0}%)`, value: sourceWeb }
   ].filter(d => d.value > 0);
   
   const interestData = [
@@ -186,11 +209,14 @@ export default async function DashboardPage({
     { name: 'ไม่ระบุ / NULL', value: intNull }
   ];
 
+  // 🔥 คำนวณเปอร์เซ็นต์และยอดรวมสำหรับ Stakeholders
+  const totalStakeholders = devCount + archCount + intCount + contCount;
+  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1; // กันส่วนหารเป็น 0
   const stakeholderData = [
-    { name: 'Developer', count: devCount },
-    { name: 'Architect', count: archCount },
-    { name: 'Interior', count: intCount },
-    { name: 'Contractor', count: contCount }
+    { name: `Developer (${Math.round((devCount / projDivider) * 100)}%)`, count: devCount },
+    { name: `Architect (${Math.round((archCount / projDivider) * 100)}%)`, count: archCount },
+    { name: `Interior (${Math.round((intCount / projDivider) * 100)}%)`, count: intCount },
+    { name: `Contractor (${Math.round((contCount / projDivider) * 100)}%)`, count: contCount }
   ];
 
   const individualStats = Object.entries(salesPerformanceData)
@@ -204,7 +230,7 @@ export default async function DashboardPage({
   const pieChartData = individualStats.map(stat => ({ name: stat.name, value: stat.projects }));
   const barChartData = individualStats.slice(0, 10);
 
-  const vipProjects = allActiveProjects.filter(p => p.is_important).slice(0, 5);
+  const vipProjects = filteredProjects.filter(p => p.is_important).slice(0, 5);
 
   const dashboardSummary = {
     totalProjects: activeProjectsCount,
@@ -214,14 +240,15 @@ export default async function DashboardPage({
     topSales: individualStats.slice(0, 3).map(s => ({ name: s.name, projects: s.projects, area: s.area })),
     vipList: vipProjects.map(v => v.project_name),
     sourceStats: { mobile: sourceMobile, web: sourceWeb, csv: sourceCSV },
-    interestStats: { hot: intVeryHigh + intHigh, warm: intMedium, cold: intLow + intFollow }
+    interestStats: { hot: intVeryHigh + intHigh, warm: intMedium, cold: intLow + intFollow },
+    totalStakeholders: totalStakeholders // ส่งข้อมูลให้ AI รับรู้ยอดรวมด้วย
   };
 
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
       
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4">
-        <div>
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4 w-full">
+        <div className="flex-none">
           <div className="flex items-center gap-2 text-indigo-700 mb-1">
             <LayoutDashboard size={28} className="stroke-[2.5]" />
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Enterprise Overview <span className="text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-2.5 py-0.5 rounded-full ml-2 shadow-sm align-middle">God Mode</span></h1>
@@ -231,18 +258,23 @@ export default async function DashboardPage({
           </p>
         </div>
         
-        {/* กล่องเลือกวันที่ วางตรงนี้ */}
-        <DashboardDateFilter />
+        {/* แถบตัวกรอง (Filter) */}
+        <div className="w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0">
+          <DashboardDateFilter 
+            salesList={profiles || []}
+            projectTypes={projectTypes || []}
+            productCategories={productCategories || []}
+          />
+        </div>
       </div>
 
-      {/* --- ส่วนที่ 1: KPI Cards แบบอลังการ --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-        
+      {/* --- KPI Cards --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">
-                {params?.start || params?.end ? 'โปรเจกต์ (ในช่วงเวลา)' : 'โปรเจกต์ทั้งหมด'}
+                {(params?.start || params?.end || params?.sales || params?.projectType || params?.source) ? 'โปรเจกต์ (ตามเงื่อนไข)' : 'โปรเจกต์ทั้งหมด'}
               </p>
               <h2 className="text-3xl font-extrabold text-slate-800">{activeProjectsCount.toLocaleString()}</h2>
             </div>
@@ -264,9 +296,6 @@ export default async function DashboardPage({
             </div>
             <div className="bg-rose-100 p-2.5 rounded-lg text-rose-600"><Star size={22} className="fill-rose-600" /></div>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            คิดเป็น {activeProjectsCount > 0 ? ((importantProjectsCount / activeProjectsCount) * 100).toFixed(1) : 0}% ของทั้งหมด
-          </div>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
@@ -276,9 +305,6 @@ export default async function DashboardPage({
               <h2 className="text-3xl font-extrabold text-slate-800">{totalAreaSqm.toLocaleString()}</h2>
             </div>
             <div className="bg-purple-100 p-2.5 rounded-lg text-purple-600"><Map size={22} /></div>
-          </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            เฉลี่ย {(activeProjectsCount > 0 ? totalAreaSqm / activeProjectsCount : 0).toLocaleString(undefined, {maximumFractionDigits: 0})} ตร.ม. / งาน
           </div>
         </div>
 
@@ -290,23 +316,28 @@ export default async function DashboardPage({
             </div>
             <div className="bg-orange-100 p-2.5 rounded-lg text-orange-600"><AlertCircle size={22} /></div>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-orange-600">
-            <Clock size={14} /> <span>ต้องการดึงข้อมูลจากอุปกรณ์</span>
-          </div>
         </div>
-
       </div>
 
-      {/* --- ส่วนที่ 2: Charts (ดึงจาก Component) --- */}
+      {/* ✨ กล่องป้ายสรุปยอดรวมที่นายต้องการครับ */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <div className="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition hover:bg-blue-100">
+          <Database size={16} />
+          รวมข้อมูลที่มีแหล่งที่มา: <span className="text-lg bg-white px-2 rounded-md shadow-sm ml-1 text-blue-800">{totalSource.toLocaleString()}</span> รายการ
+        </div>
+        <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition hover:bg-indigo-100">
+          <Users size={16} />
+          ยอดรวมทีมผู้เกี่ยวข้อง (Stakeholders) ทั้งหมด: <span className="text-lg bg-white px-2 rounded-md shadow-sm ml-1 text-indigo-800">{totalStakeholders.toLocaleString()}</span> บทบาท
+        </div>
+      </div>
+
       <DashboardCharts 
         lineData={lineChartData} pieData={pieChartData} barData={barChartData}
         sourceData={sourceChartData} interestData={interestData} stakeholderData={stakeholderData}
       />
 
-      {/* --- ส่วนที่ 3: ตาราง VIP Projects และ Matrix เซลส์ --- */}
+      {/* --- ตาราง VIP Projects และ Matrix เซลส์ --- */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
-        
-        {/* ตาราง VIP Projects */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-rose-50/30">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -345,7 +376,6 @@ export default async function DashboardPage({
           </div>
         </div>
 
-        {/* ตาราง Sales Matrix */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/30">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -382,10 +412,8 @@ export default async function DashboardPage({
             </table>
           </div>
         </div>
-
       </div>
       
-      {/* วาง AI Chat Assistant ไว้ท้ายสุด */}
       <AiChatAssistant dashboardData={dashboardSummary} />
     </main>
   );

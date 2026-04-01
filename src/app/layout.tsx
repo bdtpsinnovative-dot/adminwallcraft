@@ -142,11 +142,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {/* 💻 Main Content */}
           <main className="flex-1 min-w-0 flex flex-col w-full relative">
-            <div className="flex-1 w-full p-4 pt-24 md:p-12 lg:p-16 lg:pt-24 max-w-7xl mx-auto
-                [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              {children}
-            </div>
-          </main>
+  <div className="flex-1 w-full p-4 pt-24 md:p-8 lg:p-10 w-full mx-auto"> 
+    {/* 👆 ผมเอา max-w-7xl ออก และปรับ Padding ให้กระชับขึ้นเพื่อให้มันกาง "เต็มจอ" ครับ */}
+    {children}
+  </div>
+</main>
 
         </div>
       </body>

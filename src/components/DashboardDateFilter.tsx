@@ -1,159 +1,191 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronDown, X } from 'lucide-react';
+import { Calendar, ChevronDown, X, Filter } from 'lucide-react';
 
-export default function DashboardDateFilter() {
+type Props = {
+  salesList: any[];
+  projectTypes: any[];
+  productCategories: any[];
+};
+
+export default function DashboardDateFilter({ salesList, projectTypes, productCategories }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // ดึงค่าปัจจุบันจาก URL
   const urlStart = searchParams.get('start') || '';
   const urlEnd = searchParams.get('end') || '';
+  const currentSales = searchParams.get('sales') || 'ALL';
+  const currentProjectType = searchParams.get('projectType') || 'ALL';
+  const currentProductCategory = searchParams.get('productCategory') || 'ALL';
+  const currentSource = searchParams.get('source') || 'ALL'; // 🔥 มีตัวกรองที่มาแล้ว
+  const currentMinArea = searchParams.get('minArea') || '';
+  const currentMaxArea = searchParams.get('maxArea') || '';
 
-  const [isOpen, setIsOpen] = useState(false);
   const [start, setStart] = useState(urlStart);
   const [end, setEnd] = useState(urlEnd);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const [minAreaLocal, setMinAreaLocal] = useState(currentMinArea);
+  const [maxAreaLocal, setMaxAreaLocal] = useState(currentMaxArea);
 
   useEffect(() => {
     setStart(urlStart);
     setEnd(urlEnd);
   }, [urlStart, urlEnd]);
 
-  const applyFilter = (newStart: string, newEnd: string, rangeType: string) => {
+  // ฟังก์ชันอัปเดต Filter ทั่วไป (เช่น เซลส์, ประเภท)
+  const applyFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (newStart) params.set('start', newStart); else params.delete('start');
-    if (newEnd) params.set('end', newEnd); else params.delete('end');
-    if (rangeType) params.set('range', rangeType); else params.delete('range');
-    
-    router.push(`?${params.toString()}`);
-    setIsOpen(false);
-  };
-
-  const setQuickRange = (type: string) => {
-    const now = new Date();
-    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-    let s = '', e = thaiTime.toISOString().split('T')[0];
-
-    if (type === 'all') {
-      applyFilter('', '', 'all');
-      return;
-    } else if (type === 'today') {
-      s = e;
-    } else if (type === 'yesterday') {
-      const yesterday = new Date(thaiTime.getTime() - (24 * 60 * 60 * 1000));
-      s = yesterday.toISOString().split('T')[0];
-      e = s;
-    } else if (type === '7days') {
-      s = new Date(thaiTime.getTime() - (6 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-    } else if (type === 'this_month') {
-      s = `${thaiTime.getUTCFullYear()}-${String(thaiTime.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    if (value && value !== 'ALL') {
+      params.set(key, value);
+    } else {
+      params.delete(key);
     }
-    applyFilter(s, e, type);
+    router.push(`?${params.toString()}`);
   };
 
-  const getDisplayText = () => {
-    if (!urlStart && !urlEnd) return "ดูข้อมูลทั้งหมด";
-    if (urlStart === urlEnd) return `วันที่ ${urlStart.split('-').reverse().join('/')}`;
-    return `${urlStart.split('-').reverse().join('/')} - ${urlEnd.split('-').reverse().join('/')}`;
+  // ฟังก์ชันอัปเดตวันที่ (เมื่อผู้ใช้จิ้มเลือกปฏิทินปุ๊บ กรองปั๊บ)
+  const applyDate = (type: 'start' | 'end', val: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (val) params.set(type, val);
+    else params.delete(type);
+    router.push(`?${params.toString()}`);
   };
+
+  // ฟังก์ชันอัปเดตพื้นที่ (รอให้ผู้ใช้พิมพ์เสร็จแล้วกด Enter หรือคลิกออก)
+  const applyAreaFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (minAreaLocal) params.set('minArea', minAreaLocal); else params.delete('minArea');
+    if (maxAreaLocal) params.set('maxArea', maxAreaLocal); else params.delete('maxArea');
+    router.push(`?${params.toString()}`);
+  };
+
+  const clearAllFilters = () => {
+    router.push('?'); 
+    setMinAreaLocal('');
+    setMaxAreaLocal('');
+  };
+
+  const isFiltered = urlStart || urlEnd || currentSales !== 'ALL' || currentProjectType !== 'ALL' || currentProductCategory !== 'ALL' || currentSource !== 'ALL' || currentMinArea || currentMaxArea;
 
   return (
-    <div className="relative z-50" ref={popoverRef}>
+    <div className="flex flex-wrap items-center gap-2">
       
-      {/* ปุ่มหลักบนหน้าจอ */}
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border font-medium text-sm transition-all shadow-sm
-          ${isOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-slate-50'}`}
-      >
-        <Calendar size={16} className={isOpen || urlStart ? "text-indigo-600" : "text-slate-400"} />
-        <span>{getDisplayText()}</span>
-        <ChevronDown size={14} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+      <Filter size={16} className="text-slate-400 hidden lg:block mr-1" />
 
-      {/* หน้าต่าง Popover */}
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-80 animate-in fade-in slide-in-from-top-2">
-          
-          {/* 🔥 1. โหมดเลือกวันเดียว (เพิ่มใหม่ ใช้งานง่ายสุดๆ) */}
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">ดูแค่วันเดียว (Single Day)</h4>
-          <div className="flex items-center justify-between bg-indigo-50 hover:bg-indigo-100 transition-colors border border-indigo-100 rounded-lg p-2 mb-4">
-            <span className="text-xs text-indigo-600 font-bold w-16 px-1">ระบุวัน:</span>
-            <input 
-              type="date" 
-              // โชว์วันที่ในช่องนี้เฉพาะตอนที่ Start กับ End เป็นวันเดียวกัน
-              value={start === end ? start : ''} 
-              onChange={(e) => {
-                const selectedDate = e.target.value;
-                if(selectedDate) {
-                  // สั่งรันฟังก์ชันกรองทันที ไม่ต้องกดปุ่ม
-                  applyFilter(selectedDate, selectedDate, 'custom');
-                }
-              }}
-              className="bg-transparent border-none text-sm font-semibold text-indigo-700 focus:ring-0 cursor-pointer outline-none w-full"
-            />
-          </div>
+      {/* 1. กล่องเลือกวันที่แบบเอามาโชว์ตรงๆ (หมดปัญหาปฏิทินเด้งปิด) */}
+      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 shadow-sm hover:border-indigo-300 transition-colors">
+        <Calendar size={14} className="text-indigo-500" />
+        <input 
+          type="date" 
+          className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-[110px]" 
+          value={start} 
+          onChange={(e) => {
+            setStart(e.target.value);
+            applyDate('start', e.target.value);
+          }} 
+        />
+        <span className="text-slate-300">-</span>
+        <input 
+          type="date" 
+          className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-[110px]" 
+          value={end} 
+          onChange={(e) => {
+            setEnd(e.target.value);
+            applyDate('end', e.target.value);
+          }} 
+        />
+      </div>
 
-          <div className="w-full h-px bg-slate-100 mb-4"></div>
-          
-          {/* 2. โหมดเลือกเป็นช่วง (Start - End) */}
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">เลือกแบบเป็นช่วง (Date Range)</h4>
-          <div className="flex flex-col gap-2 mb-3">
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2">
-              <span className="text-xs text-slate-500 font-medium w-12">ตั้งแต่:</span>
-              <input 
-                type="date" 
-                value={start} 
-                onChange={(e) => setStart(e.target.value)}
-                className="bg-transparent border-none text-sm font-semibold text-slate-700 focus:ring-0 cursor-pointer outline-none"
-              />
-            </div>
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2">
-              <span className="text-xs text-slate-500 font-medium w-12">ถึง:</span>
-              <input 
-                type="date" 
-                value={end} 
-                onChange={(e) => setEnd(e.target.value)}
-                className="bg-transparent border-none text-sm font-semibold text-slate-700 focus:ring-0 cursor-pointer outline-none"
-              />
-            </div>
-          </div>
-          <button 
-            onClick={() => applyFilter(start, end, 'custom')}
-            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium text-sm py-2 rounded-lg transition-colors mb-4"
-          >
-            ใช้ตัวกรองช่วงเวลานี้
-          </button>
+      {/* 2. ตัวกรองที่มา (เพิ่มให้แล้วตามรีเควสต์ครับ) */}
+      <div className="relative">
+        <select 
+          className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
+            ${currentSource !== 'ALL' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-700 hover:border-amber-300'}`}
+          value={currentSource} 
+          onChange={(e) => applyFilter('source', e.target.value)}
+        >
+          <option value="ALL">🌐 ที่มา: ทั้งหมด</option>
+          <option value="APP">📱 ผ่านแอปฯ</option>
+          <option value="IMPORT">📁 นำเข้าไฟล์</option>
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+      </div>
 
-          <div className="w-full h-px bg-slate-100 mb-3"></div>
+      {/* 3. ตัวกรองเซลส์ดูแล */}
+      <div className="relative">
+        <select 
+          className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
+            ${currentSales !== 'ALL' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300'}`}
+          value={currentSales} 
+          onChange={(e) => applyFilter('sales', e.target.value)}
+        >
+          <option value="ALL">👤 เซลส์: ทั้งหมด</option>
+          {salesList?.map((s: any) => <option key={s.id} value={s.id}>{s.full_name || 'ไม่ระบุชื่อ'}</option>)}
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+      </div>
 
-          {/* 3. ปุ่มทางลัด (Quick Select) */}
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">ตัวเลือกด่วน</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setQuickRange('today')} className="text-sm py-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors border border-slate-100">วันนี้</button>
-            <button onClick={() => setQuickRange('yesterday')} className="text-sm py-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors border border-slate-100">เมื่อวาน</button>
-            <button onClick={() => setQuickRange('7days')} className="text-sm py-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors border border-slate-100">7 วันล่าสุด</button>
-            <button onClick={() => setQuickRange('this_month')} className="text-sm py-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors border border-slate-100">เดือนนี้</button>
-            <button onClick={() => setQuickRange('all')} className="col-span-2 text-sm py-2 mt-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors border border-rose-100 flex items-center justify-center gap-1 font-medium">
-              <X size={14} /> ล้างตัวกรองทั้งหมด
-            </button>
-          </div>
+      {/* 4. ตัวกรองประเภทโครงการ */}
+      <div className="relative">
+        <select 
+          className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
+            ${currentProjectType !== 'ALL' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300'}`}
+          value={currentProjectType} 
+          onChange={(e) => applyFilter('projectType', e.target.value)}
+        >
+          <option value="ALL">🏢 ประเภท: ทั้งหมด</option>
+          {projectTypes?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+      </div>
 
-        </div>
+      {/* 5. ตัวกรองประเภทสินค้า */}
+      <div className="relative">
+        <select 
+          className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
+            ${currentProductCategory !== 'ALL' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'}`}
+          value={currentProductCategory} 
+          onChange={(e) => applyFilter('productCategory', e.target.value)}
+        >
+          <option value="ALL">🛍 สินค้า: ทั้งหมด</option>
+          {productCategories?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+      </div>
+
+      {/* 6. ตัวกรองพื้นที่แบบ Range */}
+      <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1 bg-white shadow-sm hover:border-slate-300 transition-colors">
+        <span className="text-[10px] text-slate-500 font-bold px-1 uppercase">พื้นที่</span>
+        <input 
+          type="number" placeholder="Min" 
+          className="w-12 text-xs outline-none bg-slate-50 rounded px-1 py-1 text-center" 
+          value={minAreaLocal} onChange={(e) => setMinAreaLocal(e.target.value)}
+          onBlur={applyAreaFilter} 
+          onKeyDown={(e) => e.key === 'Enter' && applyAreaFilter()} 
+        />
+        <span className="text-slate-300">-</span>
+        <input 
+          type="number" placeholder="Max" 
+          className="w-12 text-xs outline-none bg-slate-50 rounded px-1 py-1 text-center" 
+          value={maxAreaLocal} onChange={(e) => setMaxAreaLocal(e.target.value)}
+          onBlur={applyAreaFilter}
+          onKeyDown={(e) => e.key === 'Enter' && applyAreaFilter()}
+        />
+      </div>
+
+      {/* 7. ปุ่มเคลียร์ฟิลเตอร์ทั้งหมด */}
+      {isFiltered && (
+        <button 
+          onClick={clearAllFilters}
+          className="ml-1 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 p-1.5 rounded-lg transition-colors border border-rose-100 shadow-sm flex items-center gap-1 text-[11px] font-bold"
+          title="ล้างตัวกรองทั้งหมด"
+        >
+          <X size={14} strokeWidth={2.5} /> ล้าง
+        </button>
       )}
-      
+
     </div>
   );
 }

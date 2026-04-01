@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
-  Search, RefreshCw, Edit3, Save, X, Trash2, RotateCcw, FileSpreadsheet, Calendar, AlertTriangle, CheckCircle2
+  Search, RefreshCw, Edit3, Save, X, Trash2, RotateCcw, FileSpreadsheet, Calendar, AlertTriangle, Filter
 } from "lucide-react";
 
 export default function DetailedDataCheckerPage() {
@@ -11,17 +11,29 @@ export default function DetailedDataCheckerPage() {
   const [filteredData, setFilteredData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // --- State สำหรับ Master Data (ทำ Dropdown) ---
+  const [salesList, setSalesList] = useState<any[]>([]);
+  const [projectTypes, setProjectTypes] = useState<any[]>([]);
+  const [productCategories, setProductCategories] = useState<any[]>([]);
+
   // --- State สำหรับระบบ Bulk Edit ---
   const [isEditMode, setIsEditMode] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
 
-  // --- State สำหรับระบบ Filter ---
+  // --- State สำหรับระบบ Filter หลัก ---
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterSource, setFilterSource] = useState("ALL");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // --- State สำหรับระบบ Filter ใหม่ ---
+  const [filterSales, setFilterSales] = useState("ALL");
+  const [filterProjectType, setFilterProjectType] = useState("ALL");
+  const [filterProductCategory, setFilterProductCategory] = useState("ALL");
+  const [minArea, setMinArea] = useState("");
+  const [maxArea, setMaxArea] = useState("");
 
   // --- State สำหรับระบบ Checkbox และ Bulk Delete ---
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -29,14 +41,23 @@ export default function DetailedDataCheckerPage() {
   // --- State สำหรับ Infinite Scroll ---
   const [displayLimit, setDisplayLimit] = useState(50);
 
+  // --- 1. ฟังก์ชันดึงข้อมูล ---
   const fetchDetailedData = async () => {
     setLoading(true);
     try {
       const { data: profiles } = await supabase.from("profiles").select("id, full_name");
       const { data: teams } = await supabase.from("teams").select("id, name");
+      const { data: pTypes } = await supabase.from("project_types").select("id, name");
+      const { data: pCats } = await supabase.from("product_categories").select("id, name");
 
-      const profileMap = (profiles || []).reduce((acc: any, curr) => { acc[curr.id] = curr.full_name; return acc; }, {});
-      const teamMap = (teams || []).reduce((acc: any, curr) => { acc[curr.id] = curr.name; return acc; }, {});
+      setSalesList(profiles || []);
+      setProjectTypes(pTypes || []);
+      setProductCategories(pCats || []);
+
+      const profileMap = (profiles || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.full_name }), {});
+      const teamMap = (teams || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
+      const projectTypeMap = (pTypes || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
+      const productCategoryMap = (pCats || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
 
       let allProjects: any[] = [];
       let isFetching = true;
@@ -59,11 +80,15 @@ export default function DetailedDataCheckerPage() {
           .range(startRow, startRow + step - 1);
 
         if (mainError) throw mainError;
+
         if (mainData && mainData.length > 0) {
           allProjects = [...allProjects, ...mainData];
           startRow += step;
         }
-        if (!mainData || mainData.length < step) isFetching = false;
+
+        if (!mainData || mainData.length < step) {
+          isFetching = false;
+        }
       }
 
       const flattenedData = allProjects.map((proj: any) => {
@@ -77,6 +102,7 @@ export default function DetailedDataCheckerPage() {
           area_sqm: proj.area_sqm || 0,
           is_deleted: proj.is_deleted,
           created_at: proj.created_at,
+          
           account_developer: proj.account_developer || "",
           contact_developer: proj.contact_developer || "",
           account_architecture: proj.account_architecture || "",
@@ -85,9 +111,15 @@ export default function DetailedDataCheckerPage() {
           contact_interior: proj.contact_interior || "",
           account_contractor: proj.account_contractor || "",
           contact_contractor: proj.contact_contractor || "",
+          
           item_id: item.id || null,
           note: item.note || "",
           interest_level: item.interest_level || "",
+          product_category_id: item.product_category_id || null,
+          product_category_name: productCategoryMap[item.product_category_id] || "-",
+          project_type_id: proj.project_type_id || null,
+          project_type_name: projectTypeMap[proj.project_type_id] || "-",
+          sales_id: order.user_id || null,
           order_id: order.id || null,
           customer_name: order.customer_name || "-",
           phone: order.phone || "-",
@@ -102,6 +134,7 @@ export default function DetailedDataCheckerPage() {
       setDrafts({});
       setIsEditMode(false);
       setSelectedRows([]);
+
     } catch (error: any) {
       console.error("Fetch Error:", error);
       alert(`ดึงข้อมูลไม่สำเร็จ: ${error.message}`);
@@ -110,15 +143,26 @@ export default function DetailedDataCheckerPage() {
     }
   };
 
-  useEffect(() => { fetchDetailedData(); }, []);
+  useEffect(() => {
+    fetchDetailedData();
+  }, []);
 
+  // --- 2. ฟังก์ชันระบบค้นหา & กรองข้อมูล ---
   useEffect(() => {
     let result = allData;
+    
     if (filterStatus === "DELETED") result = result.filter(item => item.is_deleted === true);
     else if (filterStatus === "ACTIVE") result = result.filter(item => item.is_deleted === false || item.is_deleted === null);
     
     if (filterSource === "APP") result = result.filter(item => item.data_source === "APP");
     else if (filterSource === "IMPORT") result = result.filter(item => item.data_source === "IMPORT");
+
+    if (filterSales !== "ALL") result = result.filter(item => item.sales_id === filterSales);
+    if (filterProjectType !== "ALL") result = result.filter(item => item.project_type_id === filterProjectType);
+    if (filterProductCategory !== "ALL") result = result.filter(item => item.product_category_id === filterProductCategory);
+
+    if (minArea !== "") result = result.filter(item => Number(item.area_sqm) >= Number(minArea));
+    if (maxArea !== "") result = result.filter(item => Number(item.area_sqm) <= Number(maxArea));
 
     if (searchTerm.trim() !== "") {
       const lowerSearch = searchTerm.toLowerCase();
@@ -129,6 +173,7 @@ export default function DetailedDataCheckerPage() {
         item.id.toLowerCase().includes(lowerSearch)
       );
     }
+    
     if (startDate) {
       const startTime = new Date(startDate).getTime();
       result = result.filter(item => new Date(item.created_at).getTime() >= startTime);
@@ -137,10 +182,12 @@ export default function DetailedDataCheckerPage() {
       const endTime = new Date(endDate).getTime();
       result = result.filter(item => new Date(item.created_at).getTime() <= endTime);
     }
+    
     setFilteredData(result);
     setDisplayLimit(50);
-  }, [searchTerm, filterStatus, filterSource, startDate, endDate, allData]);
+  }, [searchTerm, filterStatus, filterSource, filterSales, filterProjectType, filterProductCategory, minArea, maxArea, startDate, endDate, allData]);
 
+  // --- 3. ฟังก์ชันระบบจัดการ Checkbox ---
   const dataToDisplay = filteredData.slice(0, displayLimit);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,21 +199,20 @@ export default function DetailedDataCheckerPage() {
     setSelectedRows(prev => prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]);
   };
 
-  // --- ฟังก์ชันจัดการสถานะ ---
-  const handleBulkSoftDelete = async (shouldDelete: boolean) => {
-    const actionText = shouldDelete ? "ย้ายลงถังขยะ" : "กู้คืนข้อมูล";
-    if (!window.confirm(`ยืนยันการ${actionText}จำนวน ${selectedRows.length} รายการ?`)) return;
+  // --- 4. ฟังก์ชันจัดการการลบ ---
+  const handleBulkSoftDelete = async () => {
+    if (!window.confirm(`ย้าย ${selectedRows.length} รายการลงถังขยะ ใช่หรือไม่?`)) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('order_item_projects').update({ is_deleted: shouldDelete }).in('id', selectedRows);
+      const { error } = await supabase.from('order_item_projects').update({ is_deleted: true }).in('id', selectedRows);
       if (error) throw error;
-      setAllData(prev => prev.map(item => selectedRows.includes(item.id) ? { ...item, is_deleted: shouldDelete } : item));
+      setAllData(prev => prev.map(item => selectedRows.includes(item.id) ? { ...item, is_deleted: true } : item));
       setSelectedRows([]);
-    } catch (error: any) { alert(`ไม่สำเร็จ: ${error.message}`); } finally { setSaving(false); }
+    } catch (error: any) { alert(`ลบไม่สำเร็จ: ${error.message}`); } finally { setSaving(false); }
   };
 
   const handleBulkHardDelete = async () => {
-    if (!window.confirm(`⚠️ คำเตือน: คุณกำลังจะลบถาวร ${selectedRows.length} รายการ (Orders/Items/Projects)\nกู้คืนไม่ได้ ยืนยันหรือไม่?`)) return;
+    if (!window.confirm(`⚠️ คำเตือน: คุณกำลังจะ "ลบถาวร" ${selectedRows.length} รายการออกจากฐานข้อมูล (Orders/Items/Projects)\n\nกู้คืนไม่ได้ ยืนยันหรือไม่?`)) return;
     setSaving(true);
     try {
       const itemsToDelete = allData.filter(d => selectedRows.includes(d.id));
@@ -180,17 +226,18 @@ export default function DetailedDataCheckerPage() {
 
       setAllData(prev => prev.filter(item => !selectedRows.includes(item.id)));
       setSelectedRows([]);
-    } catch (error: any) { alert(`ไม่สำเร็จ: ${error.message}`); } finally { setSaving(false); }
+      alert('ลบถาวรเรียบร้อยครับนาย!');
+    } catch (error: any) { alert(`ลบไม่สำเร็จ: ${error.message}`); } finally { setSaving(false); }
   };
 
   const handleHardDeleteSingle = async (row: any) => {
-    if (!window.confirm(`⚠️ ยืนยันลบถาวร "${row.project_name}" (ลบทั้ง 3 ตาราง)?`)) return;
+    if (!window.confirm(`⚠️ ยืนยันลบ "${row.project_name}" ออกจาก Database ถาวร?\n(ลบทั้ง Orders, Items, Projects)`)) return;
     try {
       if (row.id) await supabase.from('order_item_projects').delete().eq('id', row.id);
       if (row.item_id) await supabase.from('order_items').delete().eq('id', row.item_id);
       if (row.order_id) await supabase.from('orders').delete().eq('id', row.order_id);
       setAllData(prev => prev.filter(item => item.id !== row.id));
-    } catch (error: any) { alert(`ไม่สำเร็จ: ${error.message}`); }
+    } catch (error: any) { alert(`ลบไม่สำเร็จ: ${error.message}`); }
   };
 
   const handleToggleDeleteStatus = async (projectId: string, currentStatus: boolean) => {
@@ -201,6 +248,7 @@ export default function DetailedDataCheckerPage() {
     } catch (error: any) { alert(`ทำรายการไม่สำเร็จ`); }
   };
 
+  // --- 5. ฟังก์ชันระบบแก้ข้อมูลหลายบรรทัดพร้อมกัน (Bulk Edit) ---
   const handleDraftChange = (rowId: string, field: string, value: any) => {
     setDrafts((prev) => ({ ...prev, [rowId]: { ...(prev[rowId] || {}), [field]: value } }));
   };
@@ -215,28 +263,40 @@ export default function DetailedDataCheckerPage() {
         const changes = drafts[id];
         const originalRow = allData.find(r => r.id === id);
         if (!originalRow) continue;
-        const pL: any = {}; const iL: any = {}; const oL: any = {};
-        const pF = ['project_name', 'area_sqm', 'created_at', 'account_developer', 'contact_developer', 'account_architecture', 'contact_architecture', 'account_interior', 'contact_interior', 'account_contractor', 'contact_contractor'];
-        const iF = ['note', 'interest_level'];
-        const oF = ['customer_name', 'phone'];
-        for (const k in changes) {
-          if (pF.includes(k)) pL[k] = changes[k];
-          if (iF.includes(k)) iL[k] = changes[k];
-          if (oF.includes(k)) oL[k] = changes[k];
+        
+        const projectPayload: any = {};
+        const itemPayload: any = {};
+        const orderPayload: any = {};
+        
+        const projectFields = [
+          'project_name', 'area_sqm', 'created_at', 'project_type_id',
+          'account_developer', 'contact_developer', 
+          'account_architecture', 'contact_architecture', 
+          'account_interior', 'contact_interior', 
+          'account_contractor', 'contact_contractor'
+        ];
+        const itemFields = ['note', 'interest_level', 'product_category_id'];
+        
+        // ✨ เพิ่ม user_id เข้าไปใน orderFields เพื่ออัปเดตคนดูแล (เซลส์)
+        const orderFields = ['customer_name', 'phone', 'user_id'];
+        
+        for (const key in changes) {
+          if (projectFields.includes(key)) projectPayload[key] = changes[key];
+          if (itemFields.includes(key)) itemPayload[key] = changes[key];
+          if (orderFields.includes(key)) orderPayload[key] = changes[key];
         }
-        if (Object.keys(pL).length > 0) await supabase.from('order_item_projects').update(pL).eq('id', id);
-        if (Object.keys(iL).length > 0 && originalRow.item_id) await supabase.from('order_items').update(iL).eq('id', originalRow.item_id);
-        if (Object.keys(oL).length > 0 && originalRow.order_id) await supabase.from('orders').update(oL).eq('id', originalRow.order_id);
+        if (Object.keys(projectPayload).length > 0) await supabase.from('order_item_projects').update(projectPayload).eq('id', id);
+        if (Object.keys(itemPayload).length > 0 && originalRow.item_id) await supabase.from('order_items').update(itemPayload).eq('id', originalRow.item_id);
+        if (Object.keys(orderPayload).length > 0 && originalRow.order_id) await supabase.from('orders').update(orderPayload).eq('id', originalRow.order_id);
       }
-      setAllData(prev => prev.map(item => drafts[item.id] ? { ...item, ...drafts[item.id] } : item));
-      setDrafts({});
-      setIsEditMode(false);
+      fetchDetailedData();
     } catch (error: any) { alert(`ไม่สำเร็จ: ${error.message}`); } finally { setSaving(false); }
   };
 
   const handleCancelEdit = () => {
     if (Object.keys(drafts).length > 0 && !window.confirm("ยกเลิกการแก้ไขใช่หรือไม่?")) return;
-    setDrafts({}); setIsEditMode(false);
+    setDrafts({});
+    setIsEditMode(false);
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -244,8 +304,9 @@ export default function DetailedDataCheckerPage() {
     if (scrollHeight - scrollTop <= clientHeight + 100 && displayLimit < filteredData.length) setDisplayLimit(prev => prev + 50);
   };
 
+  // --- Component ย่อยสำหรับช่องปกติ ---
   const EditableCell = ({ row, field, type = "text", width = "w-full" }: { row: any, field: string, type?: string, width?: string }) => {
-    if (!isEditMode) return <span className="truncate">{row[field] || "-"}</span>;
+    if (!isEditMode) return <span className="truncate block">{row[field] || "-"}</span>;
     let value = drafts[row.id]?.[field] ?? row[field] ?? "";
     if (type === "datetime-local" && value && !drafts[row.id]?.[field]) value = new Date(value).toISOString().slice(0, 16);
     return (
@@ -255,139 +316,241 @@ export default function DetailedDataCheckerPage() {
     );
   };
 
+  // --- Component โชว์ ชื่อ + เบอร์ติดต่อ ในช่องเดียว ---
+  const ContactCell = ({ row, accountField, contactField }: { row: any, accountField: string, contactField: string }) => {
+    if (!isEditMode) {
+      return (
+        <div className="flex flex-col gap-0.5 max-w-[180px]">
+          <span className="text-gray-800 font-medium truncate" title={row[accountField]}>{row[accountField] || "-"}</span>
+          {row[contactField] && (
+            <span className="text-gray-500 text-[10px] flex items-center gap-1 truncate" title={row[contactField]}>
+              📞 {row[contactField]}
+            </span>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-1 w-[160px]">
+        <input 
+          type="text" placeholder="ชื่อ / บริษัท"
+          value={drafts[row.id]?.[accountField] ?? row[accountField] ?? ""} 
+          onChange={(e) => handleDraftChange(row.id, accountField, e.target.value)}
+          className="w-full px-2 py-1 text-[11px] border border-blue-300 bg-white rounded outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+        />
+        <input 
+          type="text" placeholder="เบอร์โทร / ไลน์"
+          value={drafts[row.id]?.[contactField] ?? row[contactField] ?? ""} 
+          onChange={(e) => handleDraftChange(row.id, contactField, e.target.value)}
+          className="w-full px-2 py-1 text-[11px] border border-blue-300 bg-white rounded outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-0 pt-20 px-4 md:px-5 pb-5 bg-slate-100 flex flex-col font-sans overflow-hidden">
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 flex-1 flex flex-col overflow-hidden relative">
         
         {/* --- Toolbar --- */}
-        <div className="flex-none bg-white border-b border-gray-200 px-5 py-3 shadow-sm z-20 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-lg text-white shadow-md"><FileSpreadsheet size={22} /></div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-800">Executive DataSheet</h1>
-              <p className="text-xs text-slate-400 font-medium">จัดการและควบคุมข้อมูลโครงการ</p>
+        <div className="flex-none bg-white border-b border-gray-200 px-5 py-3 shadow-sm z-20 flex flex-col gap-3">
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-2 rounded-lg text-white"><FileSpreadsheet size={20} /></div>
+              <div>
+                <h1 className="text-lg font-bold text-gray-800">DataSheet Pro</h1>
+                <p className="text-xs text-gray-500 mt-1">{filteredData.length} Records</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap w-full xl:w-auto items-center gap-2">
+              <div className="relative">
+                <Search size={16} className="absolute left-2.5 top-2.5 text-gray-400" />
+                <input type="text" placeholder="ค้นหา..." className="w-32 md:w-36 lg:w-48 border rounded-md pl-9 pr-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} disabled={isEditMode} />
+              </div>
+
+              <div className="flex items-center gap-1 bg-gray-50 border rounded-md px-2 py-1">
+                <Calendar size={14} className="text-gray-500" />
+                <input type="datetime-local" className="bg-transparent text-xs outline-none w-[130px]" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={isEditMode} />
+                <span className="text-gray-400">-</span>
+                <input type="datetime-local" className="bg-transparent text-xs outline-none w-[130px]" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={isEditMode} />
+              </div>
+
+              <select className="border rounded-md px-2 py-1.5 text-sm bg-blue-50 text-blue-800 font-medium outline-none" value={filterSource} onChange={(e) => setFilterSource(e.target.value)} disabled={isEditMode}>
+                <option value="ALL">ที่มา: ทั้งหมด</option>
+                <option value="APP">📱 ผ่านแอปฯ</option>
+                <option value="IMPORT">📁 นำเข้าไฟล์</option>
+              </select>
+
+              <select className="border rounded-md px-2 py-1.5 text-sm outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} disabled={isEditMode}>
+                <option value="ALL">สถานะ: ทั้งหมด</option>
+                <option value="ACTIVE">ปกติ</option>
+                <option value="DELETED">ถังขยะ</option>
+              </select>
+
+              {!isEditMode && selectedRows.length > 0 && (
+                <div className="flex gap-1 animate-fade-in bg-red-50 p-1 rounded-lg border border-red-100">
+                  <button onClick={handleBulkSoftDelete} className="bg-orange-500 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow flex items-center gap-1.5"><Trash2 size={14} /> ถังขยะ ({selectedRows.length})</button>
+                  <button onClick={handleBulkHardDelete} className="bg-red-700 text-white px-3 py-1.5 rounded-md text-xs font-bold shadow flex items-center gap-1.5"><AlertTriangle size={14} /> ลบถาวร ({selectedRows.length})</button>
+                </div>
+              )}
+
+              {isEditMode ? (
+                <div className="flex gap-2">
+                  <button onClick={handleSaveAllChanges} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow flex items-center gap-2"><Save size={16} /> บันทึก</button>
+                  <button onClick={handleCancelEdit} className="bg-gray-100 text-gray-700 border px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2"><X size={16} /> ยกเลิก</button>
+                </div>
+              ) : (
+                <button onClick={() => setIsEditMode(true)} className="bg-slate-800 text-white px-3 py-1.5 rounded-md text-sm font-medium shadow flex items-center gap-2"><Edit3 size={16} /> แก้ไขตาราง</button>
+              )}
+
+              {!isEditMode && (
+                <button onClick={fetchDetailedData} disabled={loading} className="bg-gray-50 border px-2 py-1.5 rounded-md transition"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-wrap w-full xl:w-auto items-center gap-2">
-            <div className="relative">
-              <Search size={16} className="absolute left-2.5 top-2.5 text-slate-400" />
-              <input type="text" placeholder="ค้นหาชื่อ, โครงการ, เบอร์..." className="w-32 md:w-36 lg:w-48 border border-slate-200 rounded-md pl-9 pr-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} disabled={isEditMode} />
-            </div>
-
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-2 py-1">
-              <Calendar size={14} className="text-slate-500" />
-              <input type="datetime-local" className="bg-transparent text-xs outline-none w-[130px]" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={isEditMode} />
-              <span className="text-slate-300">-</span>
-              <input type="datetime-local" className="bg-transparent text-xs outline-none w-[130px]" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={isEditMode} />
-            </div>
-
-            <select className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-blue-50 text-blue-700 font-bold outline-none" value={filterSource} onChange={(e) => setFilterSource(e.target.value)} disabled={isEditMode}>
-              <option value="ALL">ทุกช่องทาง</option>
-              <option value="APP">📱 ผ่านแอปฯ</option>
-              <option value="IMPORT">📁 นำเข้าไฟล์</option>
+          {/* แถบ Filter */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+            <Filter size={14} className="text-gray-400 mr-1" />
+            
+            <select className="border rounded-md px-2 py-1 text-xs outline-none bg-blue-50 text-blue-800" value={filterSales} onChange={(e) => setFilterSales(e.target.value)} disabled={isEditMode}>
+              <option value="ALL">เซลส์: ทั้งหมด</option>
+              {salesList.map(s => <option key={s.id} value={s.id}>{s.full_name || 'ไม่ระบุชื่อ'}</option>)}
             </select>
 
-            <select className={`border border-slate-200 rounded-md px-2 py-1.5 text-sm font-bold outline-none ${filterStatus === 'DELETED' ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-700'}`} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} disabled={isEditMode}>
-              <option value="ALL">สถานะทั้งหมด</option>
-              <option value="ACTIVE">✅ ใช้งานอยู่</option>
-              <option value="DELETED">🗑️ อยู่ในถังขยะ</option>
+            <select className="border rounded-md px-2 py-1 text-xs outline-none bg-indigo-50 text-indigo-800" value={filterProjectType} onChange={(e) => setFilterProjectType(e.target.value)} disabled={isEditMode}>
+              <option value="ALL">ประเภทโครงการ: ทั้งหมด</option>
+              {projectTypes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
 
-            {/* Bulk Action Buttons */}
-            {!isEditMode && selectedRows.length > 0 && (
-              <div className="flex gap-1 animate-fade-in bg-slate-100 p-1 rounded-lg border border-slate-200">
-                <button onClick={() => handleBulkSoftDelete(filterStatus !== 'DELETED')} className={`px-3 py-1.5 rounded-md text-xs font-bold shadow flex items-center gap-1.5 transition ${filterStatus === 'DELETED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-orange-500 text-white hover:bg-orange-600'}`}>
-                  {filterStatus === 'DELETED' ? <><RotateCcw size={14} /> กู้คืน ({selectedRows.length})</> : <><Trash2 size={14} /> เทสลบ ({selectedRows.length})</>}
-                </button>
-                <button onClick={handleBulkHardDelete} className="bg-red-700 text-white px-3 py-1.5 rounded-md text-xs font-bold shadow hover:bg-red-800 flex items-center gap-1.5 transition"><AlertTriangle size={14} /> ลบถาวร</button>
-              </div>
-            )}
+            <select className="border rounded-md px-2 py-1 text-xs outline-none bg-teal-50 text-teal-800" value={filterProductCategory} onChange={(e) => setFilterProductCategory(e.target.value)} disabled={isEditMode}>
+              <option value="ALL">ประเภทสินค้า: ทั้งหมด</option>
+              {productCategories.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
 
-            {isEditMode ? (
-              <div className="flex gap-2">
-                <button onClick={handleSaveAllChanges} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> บันทึก</button>
-                <button onClick={handleCancelEdit} className="bg-white text-slate-600 border border-slate-300 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-50 flex items-center gap-2"><X size={16} /> ยกเลิก</button>
-              </div>
-            ) : (
-              <button onClick={() => setIsEditMode(true)} className="bg-slate-800 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow hover:bg-slate-900 transition flex items-center gap-2"><Edit3 size={16} /> แก้ไขตาราง</button>
-            )}
-
-            {!isEditMode && (
-              <button onClick={fetchDetailedData} disabled={loading} className="bg-white border border-slate-200 p-2 rounded-md hover:bg-slate-50 text-slate-500 transition"><RefreshCw size={16} className={loading ? "animate-spin text-blue-500" : ""} /></button>
-            )}
+            <div className="flex items-center gap-1 border rounded-md px-2 py-1 bg-white">
+              <span className="text-xs text-gray-500 font-medium">พื้นที่ (ตร.ม.):</span>
+              <input type="number" placeholder="Min" className="w-14 text-xs outline-none bg-transparent" value={minArea} onChange={(e) => setMinArea(e.target.value)} disabled={isEditMode} />
+              <span className="text-gray-300">-</span>
+              <input type="number" placeholder="Max" className="w-14 text-xs outline-none bg-transparent" value={maxArea} onChange={(e) => setMaxArea(e.target.value)} disabled={isEditMode} />
+            </div>
           </div>
         </div>
 
         {/* --- Table --- */}
-        <div className="flex-1 overflow-auto bg-slate-50/30 relative custom-scrollbar" onScroll={handleScroll}>
+        <div className="flex-1 overflow-auto bg-gray-50 relative custom-scrollbar" onScroll={handleScroll}>
           <table className="w-full text-left border-collapse whitespace-nowrap min-w-max">
-            <thead className="bg-slate-100 text-slate-600 text-[11px] uppercase font-bold sticky top-0 z-20 shadow-sm border-b border-slate-200 tracking-wider">
+            <thead className="bg-gray-200 text-gray-600 text-[11px] uppercase font-bold sticky top-0 z-20 shadow-sm border-b tracking-wider">
               <tr>
-                {!isEditMode && <th className="px-3 py-3 border-r border-slate-200 sticky left-0 bg-slate-100 z-30 text-center w-12 shadow-[1px_0_0_#e2e8f0]"><input type="checkbox" className="rounded border-slate-300 accent-blue-600" onChange={handleSelectAll} checked={dataToDisplay.length > 0 && selectedRows.length === dataToDisplay.length} /></th>}
-                <th className="px-4 py-3 border-r border-slate-200">วันที่สร้าง / ที่มา</th>
-                <th className="px-4 py-3 border-r border-slate-200">ชื่อโครงการ</th>
-                <th className="px-4 py-3 border-r border-slate-200 text-right">พื้นที่ (ตร.ม.)</th>
-                <th className="px-4 py-3 border-r border-slate-200">ชื่อลูกค้า</th>
-                <th className="px-4 py-3 border-r border-slate-200">เบอร์โทรศัพท์</th>
-                <th className="px-4 py-3 border-r border-slate-200">เซลส์ดูแล</th>
-                <th className="px-4 py-3 border-r border-slate-200">ความสนใจ</th>
-                <th className="px-4 py-3 border-r border-slate-200">หมายเหตุ</th>
-                <th className="px-4 py-3 border-r border-slate-200">Developer</th>
-                <th className="px-4 py-3 border-r border-slate-200">Architect</th>
-                <th className="px-4 py-3 border-r border-slate-200">Interior</th>
-                <th className="px-4 py-3 border-r border-slate-200">Contractor</th>
-                {!isEditMode && <th className="px-4 py-3 border-l border-slate-200 sticky right-0 bg-slate-100 z-30 text-center w-36 shadow-[-1px_0_0_#e2e8f0]">จัดการระบบ</th>}
+                {!isEditMode && <th className="px-3 py-2.5 border-r sticky left-0 bg-gray-200 z-30 text-center w-10 shadow-[1px_0_0_#d1d5db]"><input type="checkbox" onChange={handleSelectAll} checked={dataToDisplay.length > 0 && selectedRows.length === dataToDisplay.length} /></th>}
+                
+                {/* แยกคอลัมน์ วันที่สร้าง และ ที่มา ออกจากกัน */}
+                <th className="px-4 py-2.5 border-r border-gray-300">วันที่สร้าง</th>
+                <th className="px-2 py-2.5 border-r border-gray-300 text-center">ที่มา</th>
+                
+                <th className="px-4 py-2.5 border-r border-gray-300">ชื่อโปรเจกต์</th>
+                <th className="px-4 py-2.5 border-r border-gray-300 text-right">พื้นที่ (ตร.ม.)</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">ชื่อลูกค้า</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">เบอร์โทรศัพท์</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">เซลส์ดูแล</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">ประเภทโครงการ</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">ประเภทสินค้า</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">ความสนใจ</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">หมายเหตุ</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">Developer (ชื่อ/เบอร์)</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">Architect (ชื่อ/เบอร์)</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">Interior (ชื่อ/เบอร์)</th>
+                <th className="px-4 py-2.5 border-r border-gray-300">Contractor (ชื่อ/เบอร์)</th>
+                {!isEditMode && <th className="px-2 py-2.5 border-l sticky right-0 bg-gray-200 z-30 text-center w-32 shadow-[-1px_0_0_#d1d5db]">จัดการ</th>}
               </tr>
             </thead>
-            <tbody className="bg-white text-xs text-slate-700">
+            <tbody className="bg-white text-xs text-gray-800">
               {loading ? (
-                <tr><td colSpan={18} className="text-center py-20 font-medium text-slate-400">กำลังประมวลผลข้อมูล...</td></tr>
+                <tr><td colSpan={20} className="text-center py-16"><RefreshCw size={20} className="animate-spin inline mr-2" /> กำลังโหลด...</td></tr>
               ) : (
                 dataToDisplay.map((row) => (
-                  <tr key={row.id} className={`hover:bg-blue-50/30 transition-colors border-b border-slate-100 ${row.is_deleted ? 'bg-orange-50/40 text-slate-500' : ''} ${selectedRows.includes(row.id) ? 'bg-blue-50/80' : ''}`}>
-                    {!isEditMode && <td className="px-3 py-2 border-r border-slate-100 sticky left-0 z-10 text-center bg-inherit shadow-[1px_0_0_#f1f5f9]"><input type="checkbox" className="rounded border-slate-300 accent-blue-600" checked={selectedRows.includes(row.id)} onChange={() => handleSelectRow(row.id)} /></td>}
-                    <td className="px-4 py-2.5 border-r border-slate-100 min-w-[150px]">
-                      <div className="flex flex-col gap-1.5">
-                        <span className="font-medium text-slate-600">{new Date(row.created_at).toLocaleString("th-TH")}</span>
-                        {row.data_source === "IMPORT" ? <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-[9px] w-fit font-bold border border-slate-200">📁 IMPORT</span> : <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-[9px] w-fit font-bold border border-blue-100">📱 MOBILE APP</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 border-r border-slate-100 font-bold text-slate-900 min-w-[200px]"><EditableCell row={row} field="project_name" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-right min-w-[80px] font-mono"><EditableCell row={row} field="area_sqm" type="number" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 min-w-[150px]"><EditableCell row={row} field="customer_name" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 min-w-[120px]"><EditableCell row={row} field="phone" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-blue-700 font-bold min-w-[120px] bg-blue-50/20">{row.sales_name}</td>
-                    <td className="px-4 py-2 border-r border-slate-100 min-w-[100px]"><EditableCell row={row} field="interest_level" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 min-w-[200px] italic"><EditableCell row={row} field="note" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-slate-500"><EditableCell row={row} field="account_developer" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-slate-500"><EditableCell row={row} field="account_architecture" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-slate-500"><EditableCell row={row} field="account_interior" /></td>
-                    <td className="px-4 py-2 border-r border-slate-100 text-slate-500"><EditableCell row={row} field="account_contractor" /></td>
+                  <tr key={row.id} className={`hover:bg-blue-50/50 transition-colors border-b ${row.is_deleted ? 'bg-red-50 text-red-700' : ''} ${selectedRows.includes(row.id) ? 'bg-blue-50/80' : ''}`}>
+                    {!isEditMode && <td className="px-3 py-1.5 border-r sticky left-0 z-10 text-center bg-inherit"><input type="checkbox" checked={selectedRows.includes(row.id)} onChange={() => handleSelectRow(row.id)} /></td>}
                     
-                    {/* คอลัมน์จัดการ แบบมืออาชีพ */}
+                    {/* คอลัมน์ "วันที่สร้าง" แก้ไขได้ */}
+                    <td className="px-3 py-2 border-r min-w-[150px]">
+                      {isEditMode ? (
+                        <input 
+                          type="datetime-local"
+                          value={drafts[row.id]?.created_at ? new Date(drafts[row.id].created_at).toISOString().slice(0, 16) : new Date(row.created_at).toISOString().slice(0, 16)}
+                          onChange={(e) => handleDraftChange(row.id, 'created_at', new Date(e.target.value).toISOString())}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 bg-white rounded outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+                        />
+                      ) : (
+                        <span>{new Date(row.created_at).toLocaleString("th-TH")}</span>
+                      )}
+                    </td>
+
+                    {/* คอลัมน์ "ที่มา" ถูกแยกออกมาแล้ว */}
+                    <td className="px-2 py-2 border-r min-w-[80px] text-center">
+                      {row.data_source === "IMPORT" ? <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px] w-fit mx-auto">📁 นำเข้าไฟล์</span> : <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] w-fit mx-auto">📱 ผ่านแอปฯ</span>}
+                    </td>
+
+                    <td className="px-3 py-1.5 border-r font-medium min-w-[200px] max-w-[250px]"><EditableCell row={row} field="project_name" /></td>
+                    <td className="px-3 py-1.5 border-r text-right min-w-[80px]"><EditableCell row={row} field="area_sqm" type="number" /></td>
+                    <td className="px-3 py-1.5 border-r min-w-[150px] max-w-[200px]"><EditableCell row={row} field="customer_name" /></td>
+                    <td className="px-3 py-1.5 border-r min-w-[120px] max-w-[150px]"><EditableCell row={row} field="phone" /></td>
+                    
+                    {/* คอลัมน์ "เซลส์ดูแล" แก้ไขได้ด้วย Dropdown */}
+                    <td className="px-3 py-1.5 border-r min-w-[140px] text-gray-600">
+                      {isEditMode ? (
+                        <select 
+                          value={drafts[row.id]?.user_id ?? row.sales_id ?? ""} 
+                          onChange={(e) => handleDraftChange(row.id, 'user_id', e.target.value)} 
+                          className="w-full px-1 py-1 border border-blue-300 rounded text-[11px] outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">- เลือกเซลส์ -</option>
+                          {salesList.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-blue-700 font-medium truncate block" title={row.sales_name}>{row.sales_name}</span>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-1.5 border-r min-w-[140px] text-gray-600">
+                      {isEditMode ? (
+                        <select 
+                          value={drafts[row.id]?.project_type_id ?? row.project_type_id ?? ""} 
+                          onChange={(e) => handleDraftChange(row.id, 'project_type_id', e.target.value)} 
+                          className="w-full px-1 py-1 border border-blue-300 rounded text-[11px] outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">- เลือก -</option>
+                          {projectTypes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ) : <span className="truncate block" title={row.project_type_name}>{row.project_type_name}</span>}
+                    </td>
+                    <td className="px-3 py-1.5 border-r min-w-[140px] text-gray-600">
+                      {isEditMode ? (
+                        <select 
+                          value={drafts[row.id]?.product_category_id ?? row.product_category_id ?? ""} 
+                          onChange={(e) => handleDraftChange(row.id, 'product_category_id', e.target.value)} 
+                          className="w-full px-1 py-1 border border-blue-300 rounded text-[11px] outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">- เลือก -</option>
+                          {productCategories.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ) : <span className="truncate block" title={row.product_category_name}>{row.product_category_name}</span>}
+                    </td>
+
+                    <td className="px-3 py-1.5 border-r min-w-[100px]"><EditableCell row={row} field="interest_level" /></td>
+                    <td className="px-3 py-1.5 border-r min-w-[200px] max-w-[300px]"><EditableCell row={row} field="note" /></td>
+                    
+                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_developer" contactField="contact_developer" /></td>
+                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_architecture" contactField="contact_architecture" /></td>
+                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_interior" contactField="contact_interior" /></td>
+                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_contractor" contactField="contact_contractor" /></td>
+
                     {!isEditMode && (
-                      <td className="px-3 py-2 border-l border-slate-200 sticky right-0 z-10 text-center bg-inherit shadow-[-1px_0_0_#f1f5f9]">
-                        <div className="flex flex-col gap-1.5 items-center">
-                          {row.is_deleted ? (
-                            <div className="flex gap-1.5">
-                              <button onClick={() => handleToggleDeleteStatus(row.id, true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition font-bold text-[10px]" title="นำข้อมูลกลับมาใช้งาน">
-                                <RotateCcw size={12} /> กู้คืนข้อมูล
-                              </button>
-                              <button onClick={() => handleHardDeleteSingle(row)} className="p-1.5 rounded bg-slate-100 text-red-600 hover:bg-red-50 transition border border-red-100" title="ลบถาวร (กู้ไม่ได้)">
-                                <AlertTriangle size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-1.5">
-                              <button onClick={() => handleToggleDeleteStatus(row.id, false)} className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 text-orange-600 hover:bg-orange-50 border border-orange-100 transition font-bold text-[10px]" title="ย้ายไปถังขยะ">
-                                <Trash2 size={12} /> เทสลบ
-                              </button>
-                              <button onClick={() => handleHardDeleteSingle(row)} className="p-1.5 rounded bg-slate-50 text-slate-300 hover:text-red-500 hover:bg-red-50 transition border border-transparent hover:border-red-100" title="ลบถาวร">
-                                <AlertTriangle size={14} />
-                              </button>
-                            </div>
-                          )}
+                      <td className="px-2 py-1.5 border-l sticky right-0 z-10 text-center bg-inherit shadow-[-1px_0_0_#e5e7eb]">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => handleToggleDeleteStatus(row.id, row.is_deleted)} className={`p-1.5 rounded ${row.is_deleted ? 'bg-green-100 text-green-700' : 'bg-orange-50 text-orange-600'}`} title="เทสลบ/กู้คืน">{row.is_deleted ? <RotateCcw size={14} /> : <Trash2 size={14} />}</button>
+                          <button onClick={() => handleHardDeleteSingle(row)} className="p-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200" title="ลบถาวร"><AlertTriangle size={14} /></button>
                         </div>
                       </td>
                     )}
@@ -398,7 +561,7 @@ export default function DetailedDataCheckerPage() {
           </table>
         </div>
       </div>
-      <style dangerouslySetInnerHTML={{__html: `.animate-fade-in { animation: fadeIn 0.2s ease-in-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } } .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; } .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }` }} />
+      <style dangerouslySetInnerHTML={{__html: `.animate-fade-in { animation: fadeIn 0.3s ease-in-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }`}} />
     </div>
   );
 }
