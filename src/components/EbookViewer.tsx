@@ -18,14 +18,11 @@ const BookPage = React.forwardRef<HTMLDivElement, { pageNumber: number; width: n
         renderAnnotationLayer={false}
         renderTextLayer={false}
       />
-      {/* 🌟 เพิ่มเลเยอร์ 3D (Shadow Overlay) ให้ดูมีความโค้งตรงสันหนังสือ 🌟 */}
+      {/* 🌟 เลเยอร์ 3D (Shadow Overlay) ตรงสันหนังสือ 🌟 */}
       <div style={{
-        position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
-        pointerEvents: 'none', // ป้องกันไม่ให้เงามันบล็อกการคลิกหน้ากระดาษ
-        // สร้างเงาดำๆ ตรงขอบกระดาษทั้งสองฝั่ง (รอยพับสันหนังสือ)
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        pointerEvents: 'none', 
         boxShadow: 'inset 6px 0 20px rgba(0,0,0,0.15), inset -6px 0 20px rgba(0,0,0,0.15)',
-        // เพิ่มแสงสะท้อนให้ดูกระดาษโค้งๆ
         background: 'linear-gradient(to right, rgba(0,0,0,0.1) 0%, rgba(255,255,255,0.05) 8%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.05) 92%, rgba(0,0,0,0.1) 100%)',
       }} />
     </div>
@@ -38,13 +35,36 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [isClient, setIsClient]     = useState(false);
   const [pageSize, setPageSize]     = useState<{ width: number; height: number } | null>(null);
-  
   const [isMobile, setIsMobile]     = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef      = useRef<any>(null);
+  
+  // 🌟 1. สร้าง Reference สำหรับเก็บไฟล์เสียง 🌟
+  const flipSoundRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => { setIsClient(true); }, []);
+  useEffect(() => { 
+    setIsClient(true); 
+    // 🌟 2. โหลดไฟล์เสียงเตรียมไว้ตั้งแต่เปิดหน้าเว็บ 🌟
+    // ต้องมีไฟล์ page-flip.mp3 อยู่ในโฟลเดอร์ public ด้วยนะครับ
+    if (typeof window !== 'undefined') {
+      flipSoundRef.current = new Audio('/page-flip.mp3');
+      flipSoundRef.current.volume = 0.5; // ปรับความดังได้ (0.0 ถึง 1.0)
+    }
+  }, []);
+
+  // 🌟 ฟังก์ชันเล่นเสียงแบบข้ามช่วงต้น 🌟
+  const playFlipSound = useCallback(() => {
+    if (flipSoundRef.current) {
+      // ข้ามช่วงเงียบตอนต้นไฟล์ไปที่ 0.4 วินาที
+      flipSoundRef.current.currentTime = 0.7; 
+      
+      // สั่งเล่นทันที
+      flipSoundRef.current.play().catch(e => {
+        console.log('Audio playback failed:', e);
+      });
+    }
+  }, []);
 
   const calculateSize = useCallback((ratio: number) => {
     const screenW = window.innerWidth;
@@ -151,15 +171,20 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
               minHeight={pageSize.height}
               maxHeight={pageSize.height}
               
-              /* 🌟 อัปเกรดความสมูท และความสมจริง 🌟 */
-              maxShadowOpacity={0.8} // เพิ่มความเข้มเงาตอนพลิกกระดาษให้ดูมีมิติสมจริงขึ้น (จาก 0.35 เป็น 0.8)
-              flippingTime={700}     // เร่งความเร็วอนิเมชันให้ติดนิ้วและสมูทขึ้น (ค่าเริ่มต้น 1000ms เราลดเหลือ 700ms)
-              swipeDistance={30}     // ตั้งค่าให้มือถือปัดนิ้วเปลี่ยนหน้าง่ายขึ้น
+              maxShadowOpacity={0.8} 
+              flippingTime={700}     
+              swipeDistance={30}     
               
               showCover={!isMobile} 
               usePortrait={isMobile} 
               mobileScrollSupport={true}
-              onFlip={(e: any) => setCurrentPage(e.data)}
+              
+              /* 🌟 4. เรียกใช้เสียงตอนสลับหน้า (onFlip) 🌟 */
+              onFlip={(e: any) => {
+                setCurrentPage(e.data);
+                playFlipSound(); // เล่นเสียงฟรึ่บ!
+              }}
+              
               style={{ boxShadow: '0 30px 80px rgba(0,0,0,0.65)' }}
             >
               <BookPage key={1} pageNumber={1} width={pageSize.width} height={pageSize.height} />
