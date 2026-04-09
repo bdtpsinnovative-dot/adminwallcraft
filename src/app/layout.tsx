@@ -8,7 +8,8 @@ import {
   ShoppingBag, Menu, X, Users, Bot, 
   LayoutDashboard, Building2, Package, FileUp, 
   SearchCheck, Download, Sparkles, ImageIcon, 
-  Cloud, ImagePlus, UserPlus, HardDrive, ShieldCheck
+  Cloud, ImagePlus, UserPlus, HardDrive, ShieldCheck,
+  BookOpen // 🌟 1. เพิ่มไอคอนรูปหนังสือเข้ามาครับ
 } from 'lucide-react';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname(); 
 
   // 🛡️ 1. เช็คว่าเป็นหน้า Public (หน้าบ้าน หรือ หน้า Login) หรือไม่?
-  const isPublicPage = pathname === '/' || pathname.startsWith('/login');
+  const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog'); // แอบเพิ่ม /catalog ให้เผื่อไว้ด้วยครับ จะได้ไม่ติด Layout
 
   // 📝 รายการเมนู
   const menuGroups = [
@@ -37,6 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     {
       title: 'Digital Assets',
       items: [
+        // 🌟 2. เพิ่มเมนู E-Catalog เข้ามาตรงนี้ครับนาย! 🌟
+        { name: 'จัดการ E-Catalog', path: '/ebook', icon: BookOpen, color: 'blue' },
         { name: 'แกลเลอรีแผ่นไม้ R2', path: '/gallery-woodslabs', icon: Sparkles, color: 'purple' },
         { name: 'รูปภาพต้นฉบับ R2', path: '/gallery-original', icon: ImageIcon, color: 'blue' },
         { name: 'คลังข้อมูล Cloud R2', path: '/gallery-cloudflare', icon: Cloud, color: 'blue' },
@@ -142,7 +145,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {/* 💻 Main Content */}
             <main className="flex-1 min-w-0 flex flex-col w-full relative">
               <div className="flex-1 w-full p-4 pt-24 md:p-8 lg:p-10 mx-auto"> 
-                {/* 👆 ตรงนี้กาง "เต็มจอ" 100% เรียบร้อยแล้วครับนาย */}
                 {children}
               </div>
             </main>

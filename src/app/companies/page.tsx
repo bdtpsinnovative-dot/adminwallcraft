@@ -6,7 +6,7 @@ import {
   Building2, Tags, Plus, Save, Trash2, 
   ArrowLeft, CheckCircle2, Loader2, Search, Filter, 
   AlertCircle, X, CheckSquare, Square, FileUp, UploadCloud, Download,
-  Edit2
+  Edit2, BarChart2
 } from 'lucide-react';
 import Link from 'next/link';
 import Papa from 'papaparse'; 
@@ -24,8 +24,6 @@ export default function ManageCompaniesPage() {
   const [typeName, setTypeName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [formTypeId, setFormTypeId] = useState('');
-  
-  // State สำหรับแก้ไขกลุ่ม (Bulk Edit)
   const [bulkEditTypeId, setBulkEditTypeId] = useState('');
 
   useEffect(() => {
@@ -38,31 +36,35 @@ export default function ManageCompaniesPage() {
 
   const fetchCompanies = async () => {
     setLoading(true);
-    let query = supabase
-      .from('companies')
-      .select(`id, name, created_at, customer_type_id, customer_types ( name )`);
+    try {
+      let query = supabase
+        .from('companies')
+        .select(`id, name, created_at, customer_type_id, customer_types ( name )`);
 
-    if (selectedTypeId !== 'all') {
-      if (selectedTypeId === 'none') {
-        query = query.is('customer_type_id', null);
-      } else {
-        query = query.eq('customer_type_id', selectedTypeId);
+      if (selectedTypeId !== 'all') {
+        if (selectedTypeId === 'none') {
+          query = query.is('customer_type_id', null);
+        } else {
+          query = query.eq('customer_type_id', selectedTypeId);
+        }
       }
+
+      if (searchTerm.trim()) {
+        query = query.ilike('name', `%${searchTerm.trim()}%`);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(100); 
+
+      if (error) throw error;
+      if (data) setCompanies(data);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+    } finally {
+      setLoading(false);
     }
-
-    if (searchTerm.trim()) {
-      query = query.ilike('name', `%${searchTerm.trim()}%`);
-    }
-
-    const { data, error } = await query
-      .order('created_at', { ascending: false })
-      .limit(100); 
-
-    if (error) console.error('Error fetching companies:', error);
-    else if (data) setCompanies(data);
-    
-    setSelectedIds([]);
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export default function ManageCompaniesPage() {
 
   const handleExportAll = async () => {
     setLoading(true);
-    setImportStatus({ msg: 'กำลังดึงข้อมูลทั้งหมด กรุณารอสักครู่ (อาจใช้เวลาถ้าข้อมูลเยอะ)...', type: 'info' });
+    setImportStatus({ msg: 'กำลังดึงข้อมูลทั้งหมด กรุณารอสักครู่...', type: 'info' });
 
     try {
       let allData: any[] = [];
@@ -90,7 +92,6 @@ export default function ManageCompaniesPage() {
           .range(from, from + step - 1);
 
         if (error) throw error;
-
         if (data && data.length > 0) {
           allData = [...allData, ...data];
           from += step;
@@ -117,7 +118,6 @@ export default function ManageCompaniesPage() {
 
       setImportStatus({ msg: `ส่งออกข้อมูลสำเร็จทั้งหมด ${allData.length} รายการ`, type: 'success' });
     } catch (err: any) {
-      console.error(err);
       setImportStatus({ msg: `ส่งออกล้มเหลว: ${err.message}`, type: 'error' });
     } finally {
       setLoading(false);
@@ -239,11 +239,8 @@ export default function ManageCompaniesPage() {
     if (error) alert("ข้อมูลซ้ำ หรือเกิดข้อผิดพลาด"); else { setCompanyName(''); fetchCompanies(); }
   };
 
-  // 🔥 ฟังก์ชันอัปเดต Category ทีละรายการ (เซฟทันทีเมื่อเลือกเสร็จ)
   const handleUpdateSingleCategory = async (companyId: string, newTypeId: string) => {
     const typeValue = newTypeId === 'none' ? null : newTypeId;
-    
-    // อัปเดต UI ชั่วคราวก่อนเพื่อความรวดเร็ว
     setCompanies(prev => prev.map(c => {
       if (c.id === companyId) {
         return { 
@@ -262,25 +259,19 @@ export default function ManageCompaniesPage() {
 
     if (error) {
       alert("ไม่สามารถเปลี่ยนประเภทได้: " + error.message);
-      fetchCompanies(); // ถ้า Error ให้โหลดใหม่กลับค่าเดิม
+      fetchCompanies();
     } else {
       setImportStatus({ msg: 'อัปเดตประเภทสำเร็จ', type: 'success' });
-      setTimeout(() => setImportStatus(null), 2000); // ซ่อนแจ้งเตือนอัตโนมัติใน 2 วิ
+      setTimeout(() => setImportStatus(null), 2000);
     }
   };
 
-  // 🔥 ฟังก์ชันอัปเดต Category แบบกลุ่ม (Bulk Update)
   const handleBulkUpdateCategory = async () => {
-    if (!bulkEditTypeId) {
-      alert("กรุณาเลือกประเภทที่ต้องการเปลี่ยน");
-      return;
-    }
-    
+    if (!bulkEditTypeId) return;
     if (!confirm(`เปลี่ยนประเภทของ ${selectedIds.length} รายการที่เลือกใช่หรือไม่?`)) return;
     
     setLoading(true);
     const typeValue = bulkEditTypeId === 'none' ? null : bulkEditTypeId;
-
     const { error } = await supabase
       .from('companies')
       .update({ customer_type_id: typeValue })
@@ -315,6 +306,15 @@ export default function ManageCompaniesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* ✅ ปุ่มรายงานวิเคราะห์ (สี Amber) */}
+          <Link 
+            href="/project-reports" 
+            className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-4 py-2.5 rounded-2xl font-bold flex items-center gap-2 border border-amber-200 transition-all active:scale-95 text-sm shadow-sm"
+          >
+            <BarChart2 size={18} />
+            ดูรายงานวิเคราะห์
+          </Link>
+
           <button 
             onClick={handleExportAll}
             disabled={loading}
@@ -435,7 +435,6 @@ export default function ManageCompaniesPage() {
                     </td>
                     <td className="px-4 py-5 font-extrabold text-slate-700 text-sm max-w-[300px] truncate" title={comp.name}>{comp.name}</td>
                     <td className="px-6 py-4">
-                      {/* 🔥 Dropdown แก้ไขประเภท (Inline) */}
                       <div className="relative group/select">
                         <select 
                           className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-600 px-3 py-1.5 pr-8 rounded-xl text-xs font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all hover:bg-slate-100"
@@ -457,12 +456,7 @@ export default function ManageCompaniesPage() {
               )}
             </tbody>
           </table>
-          {companies.length === 100 && (
-             <div className="text-center py-4 text-xs text-slate-400 italic">แสดงผลสูงสุด 100 รายการ เพื่อประสิทธิภาพ กรุณาพิมพ์ค้นหาเพิ่มเติม</div>
-          )}
         </div>
-        
-        {/* Loading Overlay ตอนโหลดข้อมูล */}
         {loading && companies.length > 0 && (
           <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10">
              <Loader2 size={32} className="animate-spin text-indigo-500" />
@@ -470,17 +464,15 @@ export default function ManageCompaniesPage() {
         )}
       </div>
 
-      {/* 🔥 Floating Action Bar (อัปเดตให้มีตัวเลือกเปลี่ยนประเภท) */}
+      {/* Floating Action Bar */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 md:px-6 py-4 rounded-2xl shadow-2xl flex flex-col md:flex-row items-center gap-4 md:gap-6 z-[100] border border-slate-700 animate-in fade-in zoom-in slide-in-from-bottom-4">
-          
           <div className="flex items-center gap-4 border-b md:border-b-0 md:border-r border-slate-700 pb-3 md:pb-0 md:pr-6 w-full md:w-auto justify-between">
             <span className="text-sm font-bold whitespace-nowrap">เลือกอยู่ {selectedIds.length} รายการ</span>
             <button onClick={() => setSelectedIds([])} className="text-xs font-bold text-slate-400 hover:text-white transition-colors bg-slate-800 px-3 py-1 rounded-lg">ยกเลิก</button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* ส่วนเปลี่ยนประเภทแบบกลุ่ม */}
             <div className="flex items-center gap-2 flex-1 md:flex-none">
               <select 
                 value={bulkEditTypeId} 
@@ -499,10 +491,7 @@ export default function ManageCompaniesPage() {
                 บันทึก
               </button>
             </div>
-
             <div className="hidden md:block w-px h-6 bg-slate-700"></div>
-
-            {/* ปุ่มลบ */}
             <button 
               onClick={handleBulkDelete} 
               disabled={loading}
@@ -513,7 +502,6 @@ export default function ManageCompaniesPage() {
           </div>
         </div>
       )}
-
     </main>
-  );
+  ); 
 }
