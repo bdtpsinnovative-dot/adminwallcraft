@@ -10,7 +10,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 const BookPage = React.forwardRef<HTMLDivElement, { pageNumber: number; width: number; height: number }>(
   ({ pageNumber, width, height }, ref) => (
-    <div ref={ref} style={{ width, height, background: '#fff', overflow: 'hidden' }}>
+    <div ref={ref} style={{ width, height, background: '#fff', overflow: 'hidden', position: 'relative' }}>
       <Page
         pageNumber={pageNumber}
         width={width}
@@ -18,6 +18,16 @@ const BookPage = React.forwardRef<HTMLDivElement, { pageNumber: number; width: n
         renderAnnotationLayer={false}
         renderTextLayer={false}
       />
+      {/* 🌟 เพิ่มเลเยอร์ 3D (Shadow Overlay) ให้ดูมีความโค้งตรงสันหนังสือ 🌟 */}
+      <div style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        pointerEvents: 'none', // ป้องกันไม่ให้เงามันบล็อกการคลิกหน้ากระดาษ
+        // สร้างเงาดำๆ ตรงขอบกระดาษทั้งสองฝั่ง (รอยพับสันหนังสือ)
+        boxShadow: 'inset 6px 0 20px rgba(0,0,0,0.15), inset -6px 0 20px rgba(0,0,0,0.15)',
+        // เพิ่มแสงสะท้อนให้ดูกระดาษโค้งๆ
+        background: 'linear-gradient(to right, rgba(0,0,0,0.1) 0%, rgba(255,255,255,0.05) 8%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.05) 92%, rgba(0,0,0,0.1) 100%)',
+      }} />
     </div>
   )
 );
@@ -36,19 +46,16 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
 
   useEffect(() => { setIsClient(true); }, []);
 
-  // ── ฟังก์ชันคำนวณขนาดกระดาษ ────────────────────────────
   const calculateSize = useCallback((ratio: number) => {
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
     
-    // ถ้าน้อยกว่า 768px ถือว่าเป็นมือถือ
     const mobileMode = screenW < 768;
     setIsMobile(mobileMode);
 
-    let h = screenH * 0.90; // ให้หนังสือสูง 90% ของจอ
+    let h = screenH * 0.90; 
     let w = h / ratio;
 
-    // มือถือให้กว้างสุด 95% (โชว์ 1 หน้า) | คอมให้กว้างสุด 45% (กาง 2 หน้าคู่)
     const maxW = mobileMode ? (screenW * 0.95) : (screenW * 0.45);
 
     if (w > maxW) {
@@ -76,7 +83,6 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
     }
   }, [pdfUrl, pageSize, calculateSize]);
 
-  // recalc on resize
   useEffect(() => {
     if (!pageSize) return;
     const ratio = pageSize.height / pageSize.width;
@@ -125,8 +131,6 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
             justifyContent: 'center', 
             alignItems: 'center',
             transition: 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)', 
-            
-            /* 🌟 ขยับเฉพาะจอคอมและตอนอยู่หน้าแรกเท่านั้น มือถือไม่ต้องขยับ 🌟 */
             transform: (!isMobile && currentPage === 0) ? `translateX(-${pageSize.width / 2}px)` : 'translateX(0px)',
           }}>
 
@@ -137,9 +141,7 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
 
             {/* @ts-ignore */}
             <HTMLFlipBook
-              /* 🌟 พระเอกกู้ชีพมือถือ: บังคับให้รีเซ็ตตัวเองใหม่ทุกครั้งที่สลับจอมือถือ/คอม 🌟 */
               key={isMobile ? 'mobile-view' : 'desktop-view'} 
-              
               ref={bookRef}
               width={pageSize.width}
               height={pageSize.height}
@@ -148,11 +150,13 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
               maxWidth={pageSize.width}
               minHeight={pageSize.height}
               maxHeight={pageSize.height}
-              maxShadowOpacity={0.35}
               
-              /* 🌟 มือถือห้ามใช้โหมดหน้าปกเด็ดขาด (false) คอมพิวเตอร์ถึงจะให้ใช้ (true) 🌟 */
+              /* 🌟 อัปเกรดความสมูท และความสมจริง 🌟 */
+              maxShadowOpacity={0.8} // เพิ่มความเข้มเงาตอนพลิกกระดาษให้ดูมีมิติสมจริงขึ้น (จาก 0.35 เป็น 0.8)
+              flippingTime={700}     // เร่งความเร็วอนิเมชันให้ติดนิ้วและสมูทขึ้น (ค่าเริ่มต้น 1000ms เราลดเหลือ 700ms)
+              swipeDistance={30}     // ตั้งค่าให้มือถือปัดนิ้วเปลี่ยนหน้าง่ายขึ้น
+              
               showCover={!isMobile} 
-              
               usePortrait={isMobile} 
               mobileScrollSupport={true}
               onFlip={(e: any) => setCurrentPage(e.data)}

@@ -31,5 +31,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // 🌟 จุดที่แก้คือตรงนี้ครับนาย! 🌟
+  // เพิ่ม |.*\..* เข้าไป เพื่อบอกให้ Middleware ละเว้นไฟล์ที่มีนามสกุล (มีจุด .) ทั้งหมด
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };
