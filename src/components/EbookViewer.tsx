@@ -113,9 +113,11 @@ export default function EbookViewer({ pdfUrl }: { pdfUrl: string }) {
     return () => window.removeEventListener('resize', handleResize);
   }, [pageSize, calculateSize]);
 
-  const spreadLabel  = currentPage === 0
+  // currentPage = 0-based index ของหน้าซ้าย จาก HTMLFlipBook
+  // แค่ +1 / +2 ก็ได้เลขหน้าจริงแล้ว ไม่ต้อง * 2
+  const spreadLabel = currentPage === 0
     ? 'Cover'
-    : `${currentPage * 2} – ${Math.min(currentPage * 2 + 1, numPages)} / ${numPages}`;
+    : `${currentPage + 1} – ${Math.min(currentPage + 2, numPages)} / ${numPages}`;
 
   if (!isClient) return null;
 
