@@ -660,7 +660,7 @@ export default function EbookPage() {
               <QRCodeCanvas
                 value={`${origin}/catalog/${qrModal.slug}`}
                 size={380}
-                level={"H"}
+                level={"M"}
                 includeMargin={true}
               />
               {/* hidden canvas 1200px สำหรับ download ความละเอียดสูง */}
@@ -669,7 +669,7 @@ export default function EbookPage() {
                   id="qr-canvas"
                   value={`${origin}/catalog/${qrModal.slug}`}
                   size={1200}
-                  level={"H"}
+                  level={"M"}
                   includeMargin={true}
                 />
               </div>
