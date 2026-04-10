@@ -417,7 +417,7 @@ export default function EbookPage() {
           background: #fff;
           border-radius: 24px;
           padding: 32px;
-          max-width: 360px;
+          max-width: 500px;
           width: 100%;
           text-align: center;
           box-shadow: 0 20px 40px rgba(0,0,0,0.2);
@@ -428,13 +428,13 @@ export default function EbookPage() {
         
         .cm-modal h3 { margin: 0 0 8px; font-size: 20px; color: #0f172a; font-weight: 700; }
         .cm-modal p { margin: 0 0 24px; font-size: 14px; color: #64748b; line-height: 1.4; }
-        .cm-qr-box { 
-          background: #f8fafc; 
-          padding: 16px; 
-          border-radius: 16px; 
-          display: inline-block; 
-          margin-bottom: 24px; 
-          border: 1px solid #e2e8f0; 
+        .cm-qr-box {
+          background: #ffffff;
+          padding: 20px;
+          border-radius: 16px;
+          display: inline-block;
+          margin-bottom: 24px;
+          border: 2px solid #e2e8f0;
         }
         .cm-modal-actions { display: flex; flex-direction: column; gap: 10px; }
         .cm-btn-dl { 
@@ -656,10 +656,10 @@ export default function EbookPage() {
             <p>{qrModal.fileName.replace(/-/g, ' ')}</p>
             
             <div className="cm-qr-box">
-              <QRCodeCanvas 
+              <QRCodeCanvas
                 id="qr-canvas"
-                value={`${origin}/catalog/${qrModal.slug}`} 
-                size={180}
+                value={`${origin}/catalog/${qrModal.slug}`}
+                size={400}
                 level={"H"}
                 includeMargin={true}
               />
