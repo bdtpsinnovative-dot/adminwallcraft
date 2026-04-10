@@ -57,17 +57,26 @@ export default function EbookPage() {
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res  = await fetch('/api/upload-ebook', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.success) {
-        setUploadResult(data);
-        setFile(null);
-        fetchCatalogs();
-      } else {
-        alert('เกิดข้อผิดพลาด: ' + data.error);
-      }
+      // ขอ presigned URL จาก server (ข้อมูลเล็กมาก ไม่ติด 4.5MB limit)
+      const presignRes  = await fetch('/api/presign-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignData.success) { alert('เกิดข้อผิดพลาด: ' + presignData.error); return; }
+
+      // อัปโหลดตรงไป R2 โดยไม่ผ่าน Vercel (ไม่ติด 4.5MB)
+      const uploadRes = await fetch(presignData.presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: file,
+      });
+      if (!uploadRes.ok) { alert('อัปโหลดไป R2 ไม่สำเร็จ'); return; }
+
+      setUploadResult(presignData);
+      setFile(null);
+      fetchCatalogs();
     } catch {
       alert('ระบบมีปัญหาครับ');
     } finally {
@@ -78,13 +87,24 @@ export default function EbookPage() {
   const handleReplace = async (slug: string, newFile: File) => {
     setReplacing(slug);
     try {
-      const formData = new FormData();
-      formData.append('file', newFile);
-      formData.append('slug', slug);
-      const res  = await fetch('/api/catalogs/replace', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.success) fetchCatalogs();
-      else alert('เกิดข้อผิดพลาด: ' + data.error);
+      // ขอ presigned URL สำหรับ slug เดิม
+      const presignRes  = await fetch('/api/presign-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignData.success) { alert('เกิดข้อผิดพลาด: ' + presignData.error); return; }
+
+      // อัปโหลดตรงไป R2
+      const uploadRes = await fetch(presignData.presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: newFile,
+      });
+      if (!uploadRes.ok) { alert('เปลี่ยนไฟล์ไม่สำเร็จ'); return; }
+
+      fetchCatalogs();
     } catch {
       alert('ระบบมีปัญหาครับ');
     } finally {
