@@ -656,13 +656,23 @@ export default function EbookPage() {
             <p>{qrModal.fileName.replace(/-/g, ' ')}</p>
             
             <div className="cm-qr-box">
+              {/* แสดงผลบนจอ 380px */}
               <QRCodeCanvas
-                id="qr-canvas"
                 value={`${origin}/catalog/${qrModal.slug}`}
-                size={400}
+                size={380}
                 level={"H"}
                 includeMargin={true}
               />
+              {/* hidden canvas 1200px สำหรับ download ความละเอียดสูง */}
+              <div style={{ display: 'none' }}>
+                <QRCodeCanvas
+                  id="qr-canvas"
+                  value={`${origin}/catalog/${qrModal.slug}`}
+                  size={1200}
+                  level={"H"}
+                  includeMargin={true}
+                />
+              </div>
             </div>
 
             <div className="cm-modal-actions">
