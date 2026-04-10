@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { 
-  Search, RefreshCw, Edit3, Save, X, Trash2, RotateCcw, FileSpreadsheet, Calendar, AlertTriangle, Filter
+import {
+  Search, RefreshCw, Edit3, Save, X, Trash2, RotateCcw, FileSpreadsheet, Calendar, AlertTriangle, Filter, Download
 } from "lucide-react";
+import * as XLSX from "xlsx";
 
 export default function DetailedDataCheckerPage() {
   const [allData, setAllData] = useState<any[]>([]);
@@ -45,20 +46,36 @@ export default function DetailedDataCheckerPage() {
   const fetchDetailedData = async () => {
     setLoading(true);
     try {
-      const { data: profiles } = await supabase.from("profiles").select("id, full_name");
-      const { data: teams } = await supabase.from("teams").select("id, name");
-      const { data: pTypes } = await supabase.from("project_types").select("id, name");
-      const { data: pCats } = await supabase.from("product_categories").select("id, name");
+      // ดึง lookup tables ทั้งหมดพร้อมกัน
+      const [
+        { data: profiles },
+        { data: teams },
+        { data: pTypes },
+        { data: pCats },
+        { data: companies },
+        { data: customerTypes },
+      ] = await Promise.all([
+        supabase.from("profiles").select("id, full_name, email, role"),
+        supabase.from("teams").select("id, team_name"),
+        supabase.from("project_types").select("id, name"),
+        supabase.from("product_categories").select("id, name"),
+        supabase.from("companies").select("id, name"),
+        supabase.from("customer_types").select("id, name"),
+      ]);
 
       setSalesList(profiles || []);
       setProjectTypes(pTypes || []);
       setProductCategories(pCats || []);
 
-      const profileMap = (profiles || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.full_name }), {});
-      const teamMap = (teams || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
-      const projectTypeMap = (pTypes || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
-      const productCategoryMap = (pCats || []).reduce((acc: any, curr) => ({ ...acc, [curr.id]: curr.name }), {});
+      // สร้าง lookup maps
+      const profileMap    = (profiles     || []).reduce((acc: any, r) => ({ ...acc, [r.id]: r }), {});
+      const teamMap       = (teams        || []).reduce((acc: any, r) => ({ ...acc, [r.id]: r.team_name }), {});
+      const projectTypeMap= (pTypes       || []).reduce((acc: any, r) => ({ ...acc, [r.id]: r.name }), {});
+      const productCatMap = (pCats        || []).reduce((acc: any, r) => ({ ...acc, [r.id]: r.name }), {});
+      const companyMap    = (companies    || []).reduce((acc: any, r) => ({ ...acc, [r.id]: r.name }), {});
+      const custTypeMap   = (customerTypes|| []).reduce((acc: any, r) => ({ ...acc, [r.id]: r.name }), {});
 
+      // ดึงข้อมูลหลัก (pagination)
       let allProjects: any[] = [];
       let isFetching = true;
       let startRow = 0;
@@ -68,11 +85,18 @@ export default function DetailedDataCheckerPage() {
         const { data: mainData, error: mainError } = await supabase
           .from("order_item_projects")
           .select(`
-            *,
-            order_items ( 
-              id, note, interest_level, order_id, product_category_id,
+            id, project_name, area_sqm, is_deleted, is_important, created_at,
+            project_type_id,
+            account_developer, contact_developer,
+            account_architecture, contact_architecture,
+            account_interior, contact_interior,
+            account_contractor, contact_contractor,
+            order_items (
+              id, note, interest_level, product_category_id,
               orders (
-                id, customer_name, phone, user_id, team_id, is_synced, source, audit_log
+                id, customer_name, phone, source,
+                user_id, team_id, company_id, customer_type_id,
+                is_synced, audit_log
               )
             )
           `)
@@ -80,52 +104,67 @@ export default function DetailedDataCheckerPage() {
           .range(startRow, startRow + step - 1);
 
         if (mainError) throw mainError;
-
         if (mainData && mainData.length > 0) {
           allProjects = [...allProjects, ...mainData];
           startRow += step;
         }
-
-        if (!mainData || mainData.length < step) {
-          isFetching = false;
-        }
+        if (!mainData || mainData.length < step) isFetching = false;
       }
 
       const flattenedData = allProjects.map((proj: any) => {
-        const item = proj.order_items || {};
+        const item  = proj.order_items || {};
         const order = item.orders || {};
-        const isImported = order.audit_log === null || order.audit_log === undefined;
+        const salesProfile = profileMap[order.user_id] || {};
+        const isImported   = order.audit_log === null || order.audit_log === undefined;
 
         return {
-          id: proj.id,
-          project_name: proj.project_name || "-",
-          area_sqm: proj.area_sqm || 0,
-          is_deleted: proj.is_deleted,
-          created_at: proj.created_at,
-          
-          account_developer: proj.account_developer || "",
-          contact_developer: proj.contact_developer || "",
+          // --- Project ---
+          id:               proj.id,
+          project_name:     proj.project_name    || "-",
+          area_sqm:         proj.area_sqm        ?? 0,
+          is_deleted:       proj.is_deleted      ?? false,
+          is_important:     proj.is_important    ?? false,
+          created_at:       proj.created_at,
+          project_type_id:  proj.project_type_id || null,
+          project_type_name:projectTypeMap[proj.project_type_id] || "-",
+
+          // --- Contact Accounts ---
+          account_developer:    proj.account_developer    || "",
+          contact_developer:    proj.contact_developer    || "",
           account_architecture: proj.account_architecture || "",
           contact_architecture: proj.contact_architecture || "",
-          account_interior: proj.account_interior || "",
-          contact_interior: proj.contact_interior || "",
-          account_contractor: proj.account_contractor || "",
-          contact_contractor: proj.contact_contractor || "",
-          
-          item_id: item.id || null,
-          note: item.note || "",
-          interest_level: item.interest_level || "",
-          product_category_id: item.product_category_id || null,
-          product_category_name: productCategoryMap[item.product_category_id] || "-",
-          project_type_id: proj.project_type_id || null,
-          project_type_name: projectTypeMap[proj.project_type_id] || "-",
-          sales_id: order.user_id || null,
-          order_id: order.id || null,
-          customer_name: order.customer_name || "-",
-          phone: order.phone || "-",
-          team_name: teamMap[order?.team_id] || "ไม่ระบุทีม",
-          sales_name: profileMap[order?.user_id] || "ไม่ระบุเซลส์",
-          data_source: isImported ? "IMPORT" : "APP", 
+          account_interior:     proj.account_interior     || "",
+          contact_interior:     proj.contact_interior     || "",
+          account_contractor:   proj.account_contractor   || "",
+          contact_contractor:   proj.contact_contractor   || "",
+
+          // --- Order Item ---
+          item_id:              item.id                   || null,
+          note:                 item.note                 || "",
+          interest_level:       item.interest_level       || "",
+          product_category_id:  item.product_category_id  || null,
+          product_category_name:productCatMap[item.product_category_id] || "-",
+
+          // --- Order ---
+          order_id:             order.id                  || null,
+          customer_name:        order.customer_name       || "-",
+          phone:                order.phone               || "-",
+          source:               order.source              || "-",
+          is_synced:            order.is_synced           ?? false,
+          data_source:          isImported ? "IMPORT" : "APP",
+
+          // --- Relations (from orders) ---
+          company_id:           order.company_id          || null,
+          company_name:         companyMap[order.company_id]          || "-",
+          customer_type_id:     order.customer_type_id    || null,
+          customer_type_name:   custTypeMap[order.customer_type_id]   || "-",
+          team_id:              order.team_id             || null,
+          team_name:            teamMap[order.team_id]                || "ไม่ระบุทีม",
+
+          // --- Sales ---
+          sales_id:             order.user_id             || null,
+          sales_name:           salesProfile.full_name    || "ไม่ระบุเซลส์",
+          sales_email:          salesProfile.email        || "",
         };
       });
 
@@ -304,6 +343,100 @@ export default function DetailedDataCheckerPage() {
     if (scrollHeight - scrollTop <= clientHeight + 100 && displayLimit < filteredData.length) setDisplayLimit(prev => prev + 50);
   };
 
+  // --- 6. ฟังก์ชัน Export (ตามข้อมูลที่กรองอยู่) ---
+  // คอลัมน์ export ครบถ้วนตามโครงสร้าง DB
+  const EXPORT_COLUMNS: { header: string; key: string; format?: (v: any) => string }[] = [
+    // ── เวลา ──────────────────────────────────────────────────────────────
+    { header: "วันที่สร้าง",        key: "created_at",          format: (v) => v ? new Date(v).toLocaleDateString("th-TH", { year: "numeric", month: "2-digit", day: "2-digit" }) : "-" },
+    { header: "เวลา",               key: "created_at",          format: (v) => v ? new Date(v).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "-" },
+
+    // ── ข้อมูลโปรเจกต์ (order_item_projects) ────────────────────────────
+    { header: "ชื่อโปรเจกต์",       key: "project_name" },
+    { header: "พื้นที่ (ตร.ม.)",    key: "area_sqm" },
+    { header: "ประเภทโครงการ",      key: "project_type_name" },
+    { header: "สถานะ",              key: "is_deleted",          format: (v) => v ? "ถังขยะ" : "ปกติ" },
+
+    // ── ข้อมูลลูกค้า (orders) ────────────────────────────────────────────
+    { header: "ชื่อลูกค้า",         key: "customer_name" },
+    { header: "เบอร์โทรศัพท์",      key: "phone" },
+    { header: "ช่องทางข้อมูล",      key: "data_source",         format: (v) => v === "IMPORT" ? "นำเข้าไฟล์" : "ผ่านแอปฯ" },
+    { header: "ซิงค์แล้ว",          key: "is_synced",           format: (v) => v ? "✓ ซิงค์แล้ว" : "ยังไม่ซิงค์" },
+
+    // ── ข้อมูลเซลส์ / ทีม (profiles, teams) ─────────────────────────────
+    { header: "เซลส์ดูแล",          key: "sales_name" },
+    { header: "ทีม",                key: "team_name" },
+
+    // ── ข้อมูล Order Item ────────────────────────────────────────────────
+    { header: "ประเภทสินค้า",       key: "product_category_name" },
+    { header: "ความสนใจ",           key: "interest_level" },
+    { header: "หมายเหตุ",           key: "note" },
+
+    // ── ผู้ติดต่อโปรเจกต์ (order_item_projects contacts) ────────────────
+    { header: "Developer (ชื่อ)",   key: "account_developer" },
+    { header: "Developer (เบอร์)",  key: "contact_developer" },
+    { header: "Architect (ชื่อ)",   key: "account_architecture" },
+    { header: "Architect (เบอร์)",  key: "contact_architecture" },
+    { header: "Interior (ชื่อ)",    key: "account_interior" },
+    { header: "Interior (เบอร์)",   key: "contact_interior" },
+    { header: "Contractor (ชื่อ)",  key: "account_contractor" },
+    { header: "Contractor (เบอร์)", key: "contact_contractor" },
+  ];
+
+  const buildExportRows = () =>
+    filteredData.map(row =>
+      EXPORT_COLUMNS.reduce((acc: any, col) => {
+        const raw = row[col.key];
+        acc[col.header] = col.format ? col.format(raw) : (raw ?? "-");
+        return acc;
+      }, {})
+    );
+
+  const getFilename = (ext: string) => {
+    const now = new Date().toISOString().slice(0, 16).replace("T", "_").replace(/:/g, "-");
+    return `DataSheet_${now}_${filteredData.length}รายการ.${ext}`;
+  };
+
+  const handleExportXLSX = () => {
+    const rows = buildExportRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // ปรับความกว้างคอลัมน์ตามเนื้อหา
+    const colWidths = EXPORT_COLUMNS.map(col => {
+      const maxContentLen = rows.reduce((max, row) => {
+        const val = String(row[col.header] ?? "");
+        return Math.max(max, val.length);
+      }, col.header.length);
+      return { wch: Math.min(Math.max(maxContentLen + 2, 10), 50) };
+    });
+    ws["!cols"] = colWidths;
+
+    // ตรึง header row
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "DataSheet");
+    XLSX.writeFile(wb, getFilename("xlsx"));
+  };
+
+  const handleExportCSV = () => {
+    const rows = buildExportRows();
+    const headers = EXPORT_COLUMNS.map(c => `"${c.header}"`).join(",");
+    const body = rows.map(row =>
+      EXPORT_COLUMNS.map(c => {
+        const val = String(row[c.header] ?? "").replace(/"/g, '""');
+        return `"${val}"`;
+      }).join(",")
+    ).join("\n");
+    const bom = "\uFEFF"; // UTF-8 BOM ให้ Excel เปิดภาษาไทยถูก
+    const blob = new Blob([bom + headers + "\n" + body], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = getFilename("csv");
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // --- Component ย่อยสำหรับช่องปกติ ---
   const EditableCell = ({ row, field, type = "text", width = "w-full" }: { row: any, field: string, type?: string, width?: string }) => {
     if (!isEditMode) return <span className="truncate block">{row[field] || "-"}</span>;
@@ -405,7 +538,33 @@ export default function DetailedDataCheckerPage() {
               )}
 
               {!isEditMode && (
-                <button onClick={fetchDetailedData} disabled={loading} className="bg-gray-50 border px-2 py-1.5 rounded-md transition"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+                <button onClick={fetchDetailedData} disabled={loading} className="bg-gray-50 border px-2 py-1.5 rounded-md transition" title="รีเฟรชข้อมูล">
+                  <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+                </button>
+              )}
+
+              {/* ปุ่ม Export */}
+              {!isEditMode && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleExportXLSX}
+                    disabled={filteredData.length === 0}
+                    title={`Export ${filteredData.length} รายการ เป็น Excel (.xlsx)`}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs font-bold shadow transition"
+                  >
+                    <Download size={14} />
+                    XLSX
+                  </button>
+                  <button
+                    onClick={handleExportCSV}
+                    disabled={filteredData.length === 0}
+                    title={`Export ${filteredData.length} รายการ เป็น CSV`}
+                    className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs font-bold shadow transition"
+                  >
+                    <Download size={14} />
+                    CSV
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -445,8 +604,9 @@ export default function DetailedDataCheckerPage() {
               <tr>
                 {!isEditMode && <th className="px-3 py-2.5 border-r sticky left-0 bg-gray-200 z-30 text-center w-10 shadow-[1px_0_0_#d1d5db]"><input type="checkbox" onChange={handleSelectAll} checked={dataToDisplay.length > 0 && selectedRows.length === dataToDisplay.length} /></th>}
                 
-                {/* แยกคอลัมน์ วันที่สร้าง และ ที่มา ออกจากกัน */}
-                <th className="px-4 py-2.5 border-r border-gray-300">วันที่สร้าง</th>
+                {/* แยกคอลัมน์ วันที่ / เวลา / ที่มา */}
+                <th className="px-4 py-2.5 border-r border-gray-300 whitespace-nowrap">วันที่สร้าง</th>
+                <th className="px-4 py-2.5 border-r border-gray-300 whitespace-nowrap">เวลา</th>
                 <th className="px-2 py-2.5 border-r border-gray-300 text-center">ที่มา</th>
                 
                 <th className="px-4 py-2.5 border-r border-gray-300">ชื่อโปรเจกต์</th>
@@ -467,23 +627,28 @@ export default function DetailedDataCheckerPage() {
             </thead>
             <tbody className="bg-white text-xs text-gray-800">
               {loading ? (
-                <tr><td colSpan={20} className="text-center py-16"><RefreshCw size={20} className="animate-spin inline mr-2" /> กำลังโหลด...</td></tr>
+                <tr><td colSpan={21} className="text-center py-16"><RefreshCw size={20} className="animate-spin inline mr-2" /> กำลังโหลด...</td></tr>
               ) : (
                 dataToDisplay.map((row) => (
                   <tr key={row.id} className={`hover:bg-blue-50/50 transition-colors border-b ${row.is_deleted ? 'bg-red-50 text-red-700' : ''} ${selectedRows.includes(row.id) ? 'bg-blue-50/80' : ''}`}>
                     {!isEditMode && <td className="px-3 py-1.5 border-r sticky left-0 z-10 text-center bg-inherit"><input type="checkbox" checked={selectedRows.includes(row.id)} onChange={() => handleSelectRow(row.id)} /></td>}
                     
-                    {/* คอลัมน์ "วันที่สร้าง" แก้ไขได้ */}
-                    <td className="px-3 py-2 border-r min-w-[150px]">
+                    {/* คอลัมน์ "วันที่" และ "เวลา" แยกกัน */}
+                    <td className="px-3 py-2 border-r min-w-[110px] whitespace-nowrap">
                       {isEditMode ? (
-                        <input 
+                        <input
                           type="datetime-local"
                           value={drafts[row.id]?.created_at ? new Date(drafts[row.id].created_at).toISOString().slice(0, 16) : new Date(row.created_at).toISOString().slice(0, 16)}
                           onChange={(e) => handleDraftChange(row.id, 'created_at', new Date(e.target.value).toISOString())}
                           className="w-full px-2 py-1 text-xs border border-blue-300 bg-white rounded outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                         />
                       ) : (
-                        <span>{new Date(row.created_at).toLocaleString("th-TH")}</span>
+                        <span>{new Date(row.created_at).toLocaleDateString("th-TH", { year: "numeric", month: "2-digit", day: "2-digit" })}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 border-r min-w-[75px] whitespace-nowrap text-gray-500">
+                      {!isEditMode && (
+                        <span>{new Date(row.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                       )}
                     </td>
 
