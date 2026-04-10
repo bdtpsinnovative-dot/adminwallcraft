@@ -8,9 +8,10 @@ type Props = {
   salesList: any[];
   projectTypes: any[];
   productCategories: any[];
+  teams: any[];
 };
 
-export default function DashboardDateFilter({ salesList, projectTypes, productCategories }: Props) {
+export default function DashboardDateFilter({ salesList, projectTypes, productCategories, teams }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -20,7 +21,8 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   const currentSales = searchParams.get('sales') || 'ALL';
   const currentProjectType = searchParams.get('projectType') || 'ALL';
   const currentProductCategory = searchParams.get('productCategory') || 'ALL';
-  const currentSource = searchParams.get('source') || 'ALL'; // 🔥 มีตัวกรองที่มาแล้ว
+  const currentSource = searchParams.get('source') || 'ALL';
+  const currentTeam = searchParams.get('team') || 'ALL';
   const currentMinArea = searchParams.get('minArea') || '';
   const currentMaxArea = searchParams.get('maxArea') || '';
 
@@ -67,7 +69,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
     setMaxAreaLocal('');
   };
 
-  const isFiltered = urlStart || urlEnd || currentSales !== 'ALL' || currentProjectType !== 'ALL' || currentProductCategory !== 'ALL' || currentSource !== 'ALL' || currentMinArea || currentMaxArea;
+  const isFiltered = urlStart || urlEnd || currentSales !== 'ALL' || currentTeam !== 'ALL' || currentProjectType !== 'ALL' || currentProductCategory !== 'ALL' || currentSource !== 'ALL' || currentMinArea || currentMaxArea;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -127,7 +129,21 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
       </div>
 
-      {/* 4. ตัวกรองประเภทโครงการ */}
+      {/* 4. ตัวกรองทีม */}
+      <div className="relative">
+        <select
+          className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
+            ${currentTeam !== 'ALL' ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300'}`}
+          value={currentTeam}
+          onChange={(e) => applyFilter('team', e.target.value)}
+        >
+          <option value="ALL">🏠 ทีม: ทั้งหมด</option>
+          {teams?.map((t: any) => <option key={t.id} value={t.id}>{t.team_name}</option>)}
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+      </div>
+
+      {/* 5. ตัวกรองประเภทโครงการ */}
       <div className="relative">
         <select 
           className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
@@ -141,7 +157,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
       </div>
 
-      {/* 5. ตัวกรองประเภทสินค้า */}
+      {/* 6. ตัวกรองประเภทสินค้า */}
       <div className="relative">
         <select 
           className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm
@@ -155,7 +171,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
       </div>
 
-      {/* 6. ตัวกรองพื้นที่แบบ Range */}
+      {/* 7. ตัวกรองพื้นที่แบบ Range */}
       <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1 bg-white shadow-sm hover:border-slate-300 transition-colors">
         <span className="text-[10px] text-slate-500 font-bold px-1 uppercase">พื้นที่</span>
         <input 
@@ -175,7 +191,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         />
       </div>
 
-      {/* 7. ปุ่มเคลียร์ฟิลเตอร์ทั้งหมด */}
+      {/* 8. ปุ่มเคลียร์ฟิลเตอร์ทั้งหมด */}
       {isFiltered && (
         <button 
           onClick={clearAllFilters}

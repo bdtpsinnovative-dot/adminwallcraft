@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(targetUrl, { cache: 'force-cache' })
+    const res = await fetch(targetUrl, { cache: 'no-store' })
     if (!res.ok) {
       return NextResponse.json({ error: `Failed to fetch PDF (${res.status})` }, { status: res.status })
     }
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'application/pdf',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=86400',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     })
   } catch (err) {

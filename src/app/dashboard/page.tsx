@@ -13,10 +13,10 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { 
+  searchParams: {
     start?: string; end?: string; range?: string;
     sales?: string; projectType?: string; productCategory?: string;
-    minArea?: string; maxArea?: string; source?: string;
+    minArea?: string; maxArea?: string; source?: string; team?: string;
   };
 }) {
   const params = await Promise.resolve(searchParams);
@@ -25,11 +25,13 @@ export default async function DashboardPage({
   const [
     { data: profiles },
     { data: projectTypes },
-    { data: productCategories }
+    { data: productCategories },
+    { data: teams }
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name'),
     supabase.from('project_types').select('id, name'),
-    supabase.from('product_categories').select('id, name')
+    supabase.from('product_categories').select('id, name'),
+    supabase.from('teams').select('id, team_name').order('team_name')
   ]);
 
   const profileMap: Record<string, string> = {};
@@ -44,7 +46,8 @@ export default async function DashboardPage({
   const filterSales = params?.sales || 'ALL';
   const filterProjectType = params?.projectType || 'ALL';
   const filterProductCategory = params?.productCategory || 'ALL';
-  const filterSource = params?.source || 'ALL'; 
+  const filterSource = params?.source || 'ALL';
+  const filterTeam = params?.team || 'ALL';
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
@@ -63,7 +66,7 @@ export default async function DashboardPage({
         order_items (
           id, interest_level, images, product_category_id,
           orders (
-            id, customer_name, phone, user_id, is_synced, audit_log, source
+            id, customer_name, phone, user_id, team_id, is_synced, audit_log, source
           )
         )
       `)
@@ -98,8 +101,9 @@ export default async function DashboardPage({
     const order = item?.orders;
     
     if (filterSales !== 'ALL' && order?.user_id !== filterSales) return false;
+    if (filterTeam !== 'ALL' && order?.team_id !== filterTeam) return false;
     if (filterProductCategory !== 'ALL' && item?.product_category_id !== filterProductCategory) return false;
-    
+
     const isImported = order?.audit_log === null || order?.audit_log === undefined;
     const data_source = isImported ? "IMPORT" : "APP";
     if (filterSource !== 'ALL' && data_source !== filterSource) return false;
@@ -260,10 +264,11 @@ export default async function DashboardPage({
         
         {/* แถบตัวกรอง (Filter) */}
         <div className="w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0">
-          <DashboardDateFilter 
+          <DashboardDateFilter
             salesList={profiles || []}
             projectTypes={projectTypes || []}
             productCategories={productCategories || []}
+            teams={teams || []}
           />
         </div>
       </div>

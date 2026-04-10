@@ -116,56 +116,39 @@ export default function ImageGalleryOriginalPage() {
     setUploadStatus('preview');
   };
 
-  // 🌟 แก้ไขจุดที่ 2: เปลี่ยนวิธีบีบอัดใหม่ ลบลูปมรณะทิ้ง ทำงานเสร็จใน 0.1 วินาที เครื่องไม่ค้าง!
-  const compressImage = async (file: File): Promise<Blob> => {
+  // แปลงเป็น WebP คุณภาพเต็ม 100% — ไม่ลด size ไม่ลด resolution ไม่ลด quality
+  const convertToWebP = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new window.Image();
-      img.src = URL.createObjectURL(file);
-      
-      img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        
-        const MAX_SIZE = 1200; 
-        
-        if (width > MAX_SIZE || height > MAX_SIZE) {
-          if (width > height) { 
-            height *= MAX_SIZE / width; 
-            width = MAX_SIZE; 
-          } else { 
-            width *= MAX_SIZE / height; 
-            height = MAX_SIZE; 
-          }
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject(new Error("Cannot get canvas context"));
-        
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
+      const objectUrl = URL.createObjectURL(file);
+      img.src = objectUrl;
 
-        // แปลงเป็น WebP คุณภาพ 70% จะได้ขนาดเล็กและสวยงามโดยไม่ต้องวนลูปซ้ำๆ
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // คงขนาดต้นฉบับไว้ทั้งหมด
+        canvas.width  = img.width;
+        canvas.height = img.height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Cannot get canvas context'));
+
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(objectUrl);
+
+        // quality = 1.0 = คุณภาพสูงสุด
         canvas.toBlob(
           (blob) => {
-            URL.revokeObjectURL(img.src);
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Compression failed"));
-            }
-          }, 
-          'image/webp', 
-          0.7 
+            if (blob) resolve(blob);
+            else reject(new Error('WebP conversion failed'));
+          },
+          'image/webp',
+          1.0
         );
       };
-      
+
       img.onerror = () => {
-        URL.revokeObjectURL(img.src);
-        reject(new Error("Failed to load image for compression"));
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load image'));
       };
     });
   };
@@ -174,7 +157,7 @@ export default function ImageGalleryOriginalPage() {
     if (!selectedFile) return;
     try {
       setUploadStatus('compressing');
-      const compressedBlob = await compressImage(selectedFile);
+      const compressedBlob = await convertToWebP(selectedFile);
       const fileName = replaceFileName || `${Date.now()}-${Math.floor(Math.random() * 1000)}.webp`;
 
       setUploadStatus('uploading');
@@ -232,7 +215,7 @@ export default function ImageGalleryOriginalPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800">รูปต้นฉบับ (Original Aspect)</h1>
-              <p className="text-sm text-slate-500 mt-0.5">ระบบจะรักษาสัดส่วนเดิมและบีบอัดเป็น WebP (เก็บในโฟลเดอร์ original)</p>
+              <p className="text-sm text-slate-500 mt-0.5">อัปโหลดรูปคุณภาพเต็ม 100% แปลงเป็น WebP รักษาขนาดต้นฉบับ (โฟลเดอร์ original)</p>
             </div>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
@@ -446,7 +429,7 @@ export default function ImageGalleryOriginalPage() {
                   <Loader2 className="animate-spin text-emerald-600" size={40} />
                   <div>
                     <p className="font-semibold text-slate-700">
-                      {uploadStatus === 'compressing' ? 'กำลังบีบอัดภาพเพื่อความรวดเร็ว...' : 'กำลังอัปโหลดเข้าโฟลเดอร์ original...'}
+                      {uploadStatus === 'compressing' ? 'กำลังแปลงเป็น WebP คุณภาพสูง...' : 'กำลังอัปโหลดเข้าโฟลเดอร์ original...'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">กรุณารอสักครู่ ห้ามปิดหน้าต่างนี้</p>
                   </div>
