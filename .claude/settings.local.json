@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(find /c/the_best -name \"globals.css\" -exec wc -l {} \\\\;)",
+      "Bash(xargs wc:*)",
+      "Bash(where gh:*)",
+      "Bash(cat /d/the_best/wood_slab/woodslabs/postcss.config.*)",
+      "Bash(xargs grep:*)",
+      "Bash(find \"C:\\\\the_best\\\\wood_slab\\\\woodslabs\\\\app\\\\\\(wood\\)\\\\woodslab\\\\\" -type f -name \"*.tsx\" | head -30)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

@@ -162,14 +162,19 @@ export default function ImageGalleryOriginalPage() {
 
       setUploadStatus('uploading');
 
-      const formData = new FormData();
-      formData.append('file', compressedBlob, fileName);
-      formData.append('fileName', fileName);
-      formData.append('folder', TARGET_FOLDER); 
-
-      const response = await fetch('/api/r2', {
+      // ขอ presigned URL จาก server แล้วอัพตรงไป R2 (ข้าม limit 10MB ของ Next.js)
+      const presignRes = await fetch('/api/presign-image', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, folder: TARGET_FOLDER }),
+      });
+      if (!presignRes.ok) throw new Error('ขอ presigned URL ไม่สำเร็จ');
+      const { presignedUrl } = await presignRes.json();
+
+      const response = await fetch(presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/webp' },
+        body: compressedBlob,
       });
 
       if (!response.ok) throw new Error('Upload failed');

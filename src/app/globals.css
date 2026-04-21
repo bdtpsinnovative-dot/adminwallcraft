@@ -1,12 +1,24 @@
 @import "tailwindcss"; /* ✅ บรรทัดเดียวจบ รวมมาให้ครบทุกอย่างแล้วครับ */
 
+@font-face {
+  font-family: 'DBHeavent';
+  src: url('/fonts/DBHeaventCond.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0E00-U+0E7F; /* ภาษาไทยเท่านั้น */
+}
+
 :root {
   --background: #f9fafb;
   --foreground: #111827;
 }
 
+* {
+  font-family: 'DBHeavent', inherit;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
