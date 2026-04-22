@@ -2,19 +2,27 @@
 
 import './globals.css';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation'; 
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { 
-  ShoppingBag, Menu, X, Users, Bot, 
-  LayoutDashboard, Building2, Package, FileUp, 
-  SearchCheck, Download, Sparkles, ImageIcon, 
+import {
+  ShoppingBag, Menu, X, Users, Bot,
+  LayoutDashboard, Building2, Package, FileUp,
+  SearchCheck, Download, Sparkles, ImageIcon,
   Cloud, ImagePlus, UserPlus, HardDrive, ShieldCheck,
-  BookOpen // 🌟 1. เพิ่มไอคอนรูปหนังสือเข้ามาครับ
+  BookOpen, LogOut
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const pathname = usePathname(); 
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    document.cookie = 'admin_token=; path=/; max-age=0; SameSite=Lax;';
+    router.push('/login');
+  };
 
   // 🛡️ 1. เช็คว่าเป็นหน้า Public (หน้าบ้าน หรือ หน้า Login) หรือไม่?
   const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog'); // แอบเพิ่ม /catalog ให้เผื่อไว้ด้วยครับ จะได้ไม่ติด Layout
@@ -132,6 +140,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </div>
                 ))}
               </nav>
+
+              {/* 🚪 Logout Button */}
+              <div className="p-5 border-t border-slate-100 shrink-0">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl font-bold text-sm text-red-500 hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 transition-all duration-300"
+                >
+                  <LogOut size={18} />
+                  <span>ออกจากระบบ</span>
+                </button>
+              </div>
             </aside>
 
             {/* 🌑 Overlay Backdrop */}
