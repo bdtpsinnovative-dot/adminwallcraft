@@ -1,12 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
-  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Crown, Database
+  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Crown, Database, MapPin
 } from 'lucide-react';
 
 import DashboardCharts from '@/components/DashboardCharts';
 import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
+import Link from 'next/link';
+import { ChevronRight, Smartphone, FileText } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +85,7 @@ export default async function DashboardPage({
     const { data, error } = await query;
 
     if (error) {
-      console.error("🔥 Dashboard Fetch Error:", error.message);
+      console.error("Dashboard Fetch Error:", error.message);
       break;
     }
     if (data && data.length > 0) {
@@ -95,7 +97,7 @@ export default async function DashboardPage({
     }
   }
 
-  // 🔥 กรองข้อมูล
+  // กรองข้อมูล
   const filteredProjects = allActiveProjects.filter(proj => {
     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = item?.orders;
@@ -196,7 +198,6 @@ export default async function DashboardPage({
 
   const lineChartData = Object.values(dailyCountMap).sort((a, b) => a.timestamp - b.timestamp).slice(-14).map(i => ({ date: i.date, count: i.count }));
   
-  // 🔥 คำนวณเปอร์เซ็นต์สำหรับ Source Data
   const totalSource = sourceMobile + sourceCSV + sourceWeb;
   const sourceChartData = [
     { name: `Mobile App (${totalSource > 0 ? Math.round((sourceMobile / totalSource) * 100) : 0}%)`, value: sourceMobile },
@@ -213,9 +214,8 @@ export default async function DashboardPage({
     { name: 'ไม่ระบุ / NULL', value: intNull }
   ];
 
-  // 🔥 คำนวณเปอร์เซ็นต์และยอดรวมสำหรับ Stakeholders
   const totalStakeholders = devCount + archCount + intCount + contCount;
-  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1; // กันส่วนหารเป็น 0
+  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
   const stakeholderData = [
     { name: `Developer (${Math.round((devCount / projDivider) * 100)}%)`, count: devCount },
     { name: `Architect (${Math.round((archCount / projDivider) * 100)}%)`, count: archCount },
@@ -245,8 +245,44 @@ export default async function DashboardPage({
     vipList: vipProjects.map(v => v.project_name),
     sourceStats: { mobile: sourceMobile, web: sourceWeb, csv: sourceCSV },
     interestStats: { hot: intVeryHigh + intHigh, warm: intMedium, cold: intLow + intFollow },
-    totalStakeholders: totalStakeholders // ส่งข้อมูลให้ AI รับรู้ยอดรวมด้วย
+    totalStakeholders: totalStakeholders
   };
+
+  // --- 5. สรุปข้อมูลการเช็คอิน (แยกนับยอด App และ CSV ออกจากกัน) ---
+  const checkInStats: Record<string, { appCount: number, csvCount: number, locations: string[] }> = {};
+
+  filteredProjects.forEach(proj => {
+    const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
+    const order = orderItem?.orders;
+    const userId = order?.user_id || 'unknown';
+    const auditLog = order?.audit_log;
+
+    if (!checkInStats[userId]) {
+      checkInStats[userId] = { appCount: 0, csvCount: 0, locations: [] };
+    }
+    
+    if (auditLog) {
+      // มี audit_log แสดงว่ามาจาก App และมีการเช็คอินจริง
+      checkInStats[userId].appCount += 1;
+      if (proj.project_name) {
+        checkInStats[userId].locations.push(proj.project_name);
+      }
+    } else {
+      // ไม่มี audit_log แสดงว่ามาจากการอัปโหลดไฟล์ CSV
+      checkInStats[userId].csvCount += 1;
+    }
+  });
+
+  const checkInList = Object.entries(checkInStats).map(([uId, stats]) => {
+    return {
+      userId: uId,
+      name: profileMap[uId] || (uId === 'unknown' ? 'ไม่ระบุ/ไม่มีเซลส์' : 'พนักงานที่ถูกลบ'),
+      appCount: stats.appCount,
+      csvCount: stats.csvCount,
+      total: stats.appCount + stats.csvCount,
+      sampleLocation: stats.locations.length > 0 ? stats.locations[0] : '-',
+    };
+  }).sort((a, b) => b.appCount - a.appCount); // เรียงตามจำนวนที่ลงพื้นที่จริงก่อน
 
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
@@ -262,7 +298,6 @@ export default async function DashboardPage({
           </p>
         </div>
         
-        {/* แถบตัวกรอง (Filter) */}
         <div className="w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0">
           <DashboardDateFilter
             salesList={profiles || []}
@@ -273,7 +308,6 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* --- KPI Cards --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="flex justify-between items-start">
@@ -324,7 +358,6 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* ✨ กล่องป้ายสรุปยอดรวมที่นายต้องการครับ */}
       <div className="flex flex-wrap gap-3 mb-6">
         <div className="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition hover:bg-blue-100">
           <Database size={16} />
@@ -341,7 +374,6 @@ export default async function DashboardPage({
         sourceData={sourceChartData} interestData={interestData} stakeholderData={stakeholderData}
       />
 
-      {/* --- ตาราง VIP Projects และ Matrix เซลส์ --- */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-rose-50/30">
@@ -416,6 +448,67 @@ export default async function DashboardPage({
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* --- ตารางสรุปการเช็คอินของเซลส์ (แยก App และ CSV) --- */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mb-8">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+            <MapPin size={18} className="text-slate-600" /> สถิติการลงพื้นที่สร้างโปรเจกต์ (Check-ins & Data Import)
+          </h3>
+        </div>
+        <div className="overflow-x-auto p-0">
+          <table className="w-full text-left whitespace-nowrap text-sm">
+            <thead className="bg-slate-100 text-slate-500 text-xs uppercase font-bold tracking-wider">
+              <tr>
+                <th className="px-5 py-3 border-b border-slate-200">รายชื่อพนักงานขาย</th>
+                <th className="px-5 py-3 border-b border-slate-200 text-center">ลงพื้นที่ (App)</th>
+                <th className="px-5 py-3 border-b border-slate-200 text-center">อัปโหลดไฟล์ (CSV)</th>
+                <th className="px-5 py-3 border-b border-slate-200">ตัวอย่างสถานที่ล่าสุด</th>
+                <th className="px-5 py-3 border-b border-slate-200 text-center">ดูข้อมูล</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {checkInList.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-6 text-slate-500">ไม่มีข้อมูลการเช็คอินในช่วงเวลานี้</td></tr>
+              ) : (
+                checkInList.map((ci, idx) => (
+                  <tr key={ci.userId || idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3 font-semibold text-slate-800 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shadow-sm">
+                        {ci.name !== 'ไม่ระบุ/ไม่มีเซลส์' && ci.name !== 'พนักงานที่ถูกลบ' ? ci.name.charAt(0) : '?'}
+                      </div>
+                      {ci.name}
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+                        <Smartphone size={14} /> {ci.appCount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <span className="inline-flex items-center gap-1.5 font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                        <FileText size={14} /> {ci.csvCount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">
+                      <span className="truncate max-w-[250px] inline-block align-bottom" title={ci.sampleLocation}>
+                        {ci.sampleLocation}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <Link 
+                        href={`/dashboard/checkins/${ci.userId}`} 
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"
+                      >
+                        ดูประวัติ <ChevronRight size={14} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
       

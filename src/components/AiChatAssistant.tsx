@@ -55,6 +55,7 @@ export default function AiChatAssistant({ dashboardData }: { dashboardData: any 
       {/* ปุ่มเปิดแชท */}
       {!isOpen && (
         <button 
+          suppressHydrationWarning // 🔥 เติมคำนี้ลงไปตรงนี้เลยจ้ะนาย!
           onClick={() => setIsOpen(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center gap-2 group border-2 border-indigo-400"
         >
