@@ -9,6 +9,7 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import Link from 'next/link';
 import { ChevronRight, Smartphone, FileText } from 'lucide-react';
+import SalesPerformanceTable from '@/components/SalesPerformanceTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +77,6 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .range(startRow, startRow + step - 1);
 
-    // 🌟 พระเอกอยู่ตรงนี้: ถ้ามีการเลือกวันที่ เราจะบอก Supabase ว่า "ดึงตามวันที่ หรือ ดึงตัวที่ติดดาวมาด้วย!"
     if (startIso || endIso) {
         let dateFilter = '';
         if (startIso && endIso) {
@@ -86,7 +86,6 @@ export default async function DashboardPage({
         } else if (endIso) {
             dateFilter = `created_at.lte.${endIso}`;
         }
-        // สั่งให้ดึงตามช่วงเวลา หรือ ถ้า is_important=true ก็ดึงมาเลย!
         query = query.or(`${dateFilter},is_important.eq.true`); 
     }
 
@@ -109,10 +108,8 @@ export default async function DashboardPage({
     }
   }
 
-// --- ตรงส่วนการกรองข้อมูล (filteredProjects) ---
+  // --- ตรงส่วนการกรองข้อมูล (filteredProjects) ---
   const filteredProjects = allActiveProjects.filter(proj => {
-    
-    // ปล่อยผ่านให้หมดทุกชื่อโครงการ! เพื่อให้สถิติ Dashboard รวมครบ 700+ รายการ
     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = item?.orders;
     
@@ -158,7 +155,6 @@ export default async function DashboardPage({
     const area = Number(proj.area_sqm) || 0;
     const isSynced = order?.is_synced ?? true;
     
-    // นับยอดใส่การ์ด VIP ตรงนี้แหละ!
     if (proj.is_important) importantProjectsCount++;
 
     const auditLog = order?.audit_log;
@@ -249,7 +245,6 @@ export default async function DashboardPage({
   const pieChartData = individualStats.map(stat => ({ name: stat.name, value: stat.projects }));
   const barChartData = individualStats.slice(0, 10);
 
-  // 🌟 ดึงข้อมูล VIP เพื่อส่งให้ AI หรือทำ Report
   const vipProjects = filteredProjects.filter(p => p.is_important);
 
   const dashboardSummary = {
@@ -278,13 +273,11 @@ export default async function DashboardPage({
     }
     
     if (auditLog) {
-      // มี audit_log แสดงว่ามาจาก App และมีการเช็คอินจริง
       checkInStats[userId].appCount += 1;
       if (proj.project_name) {
         checkInStats[userId].locations.push(proj.project_name);
       }
     } else {
-      // ไม่มี audit_log แสดงว่ามาจากการอัปโหลดไฟล์ CSV
       checkInStats[userId].csvCount += 1;
     }
   });
@@ -298,7 +291,7 @@ export default async function DashboardPage({
       total: stats.appCount + stats.csvCount,
       sampleLocation: stats.locations.length > 0 ? stats.locations[0] : '-',
     };
-  }).sort((a, b) => b.appCount - a.appCount); // เรียงตามจำนวนที่ลงพื้นที่จริงก่อน
+  }).sort((a, b) => b.appCount - a.appCount);
 
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
@@ -392,46 +385,12 @@ export default async function DashboardPage({
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         
-        {/* ตารางฝั่งซ้าย: โปรเจกต์แทรคเกอร์ (มีปุ่มฟิลเตอร์ 3 ปุ่ม ของเรา!) */}
+        {/* ตารางฝั่งซ้าย: โปรเจกต์แทรคเกอร์ */}
         <VipPipelineTable projects={filteredProjects} />
-
-        {/* ตารางฝั่งขวา: ผลงานยอดขาย Top 5 */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/30">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <Target size={18} className="text-indigo-600" /> ผลงานทีมปฏิบัติการขาย (Top 5)
-            </h3>
-          </div>
-          <div className="overflow-x-auto p-0">
-            <table className="w-full text-left whitespace-nowrap text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold tracking-wider">
-                <tr>
-                  <th className="px-5 py-3 border-b border-slate-200">รายชื่อเซลส์</th>
-                  <th className="px-5 py-3 border-b border-slate-200 text-center">งาน</th>
-                  <th className="px-5 py-3 border-b border-slate-200 text-right">ผลงาน (ตร.ม.)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {individualStats.length === 0 ? (
-                  <tr><td colSpan={3} className="text-center py-6 text-slate-500">ไม่มีข้อมูลการขายในช่วงเวลานี้</td></tr>
-                ) : (
-                  individualStats.slice(0, 5).map((stat, idx) => (
-                    <tr key={stat.id || idx} className="hover:bg-slate-50">
-                      <td className="px-5 py-3 flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600'}`}>
-                          {idx + 1}
-                        </div>
-                        <span className="font-semibold text-slate-800">{stat.name}</span>
-                      </td>
-                      <td className="px-5 py-3 text-center text-slate-600">{stat.projects}</td>
-                      <td className="px-5 py-3 text-right font-bold text-slate-700">{stat.area.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        
+        {/* 🌟 ฝั่งขวา: ตารางผลงานยอดขายแบบมีฟิลเตอร์เรียงลำดับ! (ใช้ Component แค่บรรทัดเดียวจบ) */}
+        <SalesPerformanceTable stats={individualStats} />
+        
       </div>
 
       {/* --- ตารางสรุปการเช็คอินของเซลส์ (แยก App และ CSV) --- */}
