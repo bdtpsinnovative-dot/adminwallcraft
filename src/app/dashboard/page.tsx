@@ -1,9 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
-  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Crown, Database, MapPin
+  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Database, MapPin
 } from 'lucide-react';
-
+import VipPipelineTable from '@/components/VipPipelineTable';
 import DashboardCharts from '@/components/DashboardCharts';
 import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
@@ -53,7 +53,7 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 3. ดึงข้อมูลโปรเจกต์ ---
+  // --- 3. ดึงข้อมูลโปรเจกต์ (แก้ให้ดึง VIP มาตลอด ไม่สนวันที่!) ---
   let allActiveProjects: any[] = [];
   let isFetching = true;
   let startRow = 0;
@@ -76,8 +76,20 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .range(startRow, startRow + step - 1);
 
-    if (startIso) query = query.gte('created_at', startIso);
-    if (endIso) query = query.lte('created_at', endIso);
+    // 🌟 พระเอกอยู่ตรงนี้: ถ้ามีการเลือกวันที่ เราจะบอก Supabase ว่า "ดึงตามวันที่ หรือ ดึงตัวที่ติดดาวมาด้วย!"
+    if (startIso || endIso) {
+        let dateFilter = '';
+        if (startIso && endIso) {
+            dateFilter = `and(created_at.gte.${startIso},created_at.lte.${endIso})`;
+        } else if (startIso) {
+            dateFilter = `created_at.gte.${startIso}`;
+        } else if (endIso) {
+            dateFilter = `created_at.lte.${endIso}`;
+        }
+        // สั่งให้ดึงตามช่วงเวลา หรือ ถ้า is_important=true ก็ดึงมาเลย!
+        query = query.or(`${dateFilter},is_important.eq.true`); 
+    }
+
     if (minArea) query = query.gte('area_sqm', minArea);
     if (maxArea) query = query.lte('area_sqm', maxArea);
     if (filterProjectType !== 'ALL') query = query.eq('project_type_id', filterProjectType);
@@ -97,8 +109,15 @@ export default async function DashboardPage({
     }
   }
 
-  // กรองข้อมูล
+  // --- กรองข้อมูล (ตามโค้ดเดิมของนาย แต่เพิ่มอภิสิทธิ์ให้ VIP!) ---
   const filteredProjects = allActiveProjects.filter(proj => {
+    // 1. เตะ "ไม่มีการระบุโครงการ" ทิ้ง (ยกเว้นมันเป็น VIP เราจะเก็บไว้ด่าเซลส์ 555)
+    if (proj.project_name === 'ไม่มีการระบุโครงการ' && !proj.is_important) return false;
+
+    // 🌟 2. อภิสิทธิ์ VIP: ถ้าติดดาว ให้รอดตัวกรองเซลส์/ทีม ไปเลย!
+    if (proj.is_important) return true;
+
+    // 3. กรองตามปกติ
     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = item?.orders;
     
@@ -144,6 +163,7 @@ export default async function DashboardPage({
     const area = Number(proj.area_sqm) || 0;
     const isSynced = order?.is_synced ?? true;
     
+    // นับยอดใส่การ์ด VIP ตรงนี้แหละ!
     if (proj.is_important) importantProjectsCount++;
 
     const auditLog = order?.audit_log;
@@ -234,7 +254,8 @@ export default async function DashboardPage({
   const pieChartData = individualStats.map(stat => ({ name: stat.name, value: stat.projects }));
   const barChartData = individualStats.slice(0, 10);
 
-  const vipProjects = filteredProjects.filter(p => p.is_important).slice(0, 5);
+  // 🌟 ดึงข้อมูล VIP เพื่อส่งให้ AI หรือทำ Report
+  const vipProjects = filteredProjects.filter(p => p.is_important);
 
   const dashboardSummary = {
     totalProjects: activeProjectsCount,
@@ -375,44 +396,11 @@ export default async function DashboardPage({
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-rose-50/30">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <Crown size={18} className="text-rose-500" /> โปรเจกต์สำคัญที่ต้องติดตาม (VIP Pipeline)
-            </h3>
-          </div>
-          <div className="overflow-x-auto p-0">
-            <table className="w-full text-left whitespace-nowrap text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold tracking-wider">
-                <tr>
-                  <th className="px-5 py-3 border-b border-slate-200">ชื่อโปรเจกต์</th>
-                  <th className="px-5 py-3 border-b border-slate-200">ลูกค้า</th>
-                  <th className="px-5 py-3 border-b border-slate-200 text-right">พื้นที่ (ตร.ม.)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {vipProjects.length === 0 ? (
-                  <tr><td colSpan={3} className="text-center py-6 text-slate-500">ไม่มีโปรเจกต์ VIP ในช่วงเวลานี้</td></tr>
-                ) : (
-                  vipProjects.map((proj, idx) => {
-                    const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
-                    const order = orderItem?.orders;
-                    return (
-                      <tr key={proj.id || idx} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-semibold text-slate-800 flex items-center gap-2">
-                          <Star size={14} className="text-rose-500 fill-rose-500" /> {proj.project_name || 'ไม่ระบุชื่อ'}
-                        </td>
-                        <td className="px-5 py-3 text-slate-600">{order?.customer_name || '-'}</td>
-                        <td className="px-5 py-3 text-right font-bold text-emerald-600">{Number(proj.area_sqm).toLocaleString()}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        
+        {/* ตารางฝั่งซ้าย: โปรเจกต์แทรคเกอร์ (มีปุ่มฟิลเตอร์ 3 ปุ่ม ของเรา!) */}
+        <VipPipelineTable projects={filteredProjects} />
 
+        {/* ตารางฝั่งขวา: ผลงานยอดขาย Top 5 */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/30">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
