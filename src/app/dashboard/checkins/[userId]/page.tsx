@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-// 🌟 เพิ่มไอคอน Users เข้ามาใช้กับส่วนผู้เกี่ยวข้อง
 import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users } from 'lucide-react';
 import ImageGallery from '@/components/ImageGallery';
 import UserCheckInFilter from '@/components/UserCheckInFilter';
@@ -13,7 +12,8 @@ export default async function UserCheckInHistoryPage({
   searchParams 
 }: { 
   params: { userId: string },
-  searchParams: { start?: string; end?: string; source?: string } 
+  // 🌟 เพิ่ม Parameter ให้รับค่า area และ role ได้
+  searchParams: { start?: string; end?: string; source?: string; minArea?: string; maxArea?: string; role?: string; } 
 }) {
   const resolvedParams = await Promise.resolve(params);
   const userId = resolvedParams.userId;
@@ -25,6 +25,10 @@ export default async function UserCheckInHistoryPage({
   if (resolvedSearchParams?.end) endIso = new Date(`${resolvedSearchParams.end}T23:59:59.999+07:00`).toISOString();
   
   const filterSource = resolvedSearchParams?.source || 'APP';
+  // 🌟 ดึงค่าพื้นที่และ Role
+  const minAreaFilter = resolvedSearchParams?.minArea ? Number(resolvedSearchParams.minArea) : null;
+  const maxAreaFilter = resolvedSearchParams?.maxArea ? Number(resolvedSearchParams.maxArea) : null;
+  const roleFilter = resolvedSearchParams?.role || 'ALL';
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -34,7 +38,6 @@ export default async function UserCheckInHistoryPage({
 
   const userName = profile?.full_name || 'ไม่ระบุชื่อพนักงาน';
 
-  // 🌟 จุดที่ 1: เพิ่มการดึงฟิลด์ account_* ออกมาจาก Database
   let query = supabase
     .from('orders')
     .select(`
@@ -44,7 +47,10 @@ export default async function UserCheckInHistoryPage({
         note,
         order_item_projects (
           project_name, area_sqm, is_deleted,
-          account_developer, account_architecture, account_interior, account_contractor
+          account_developer, contact_developer,
+          account_architecture, contact_architecture,
+          account_interior, contact_interior,
+          account_contractor, contact_contractor
         )
       )
     `)
@@ -70,6 +76,27 @@ export default async function UserCheckInHistoryPage({
     return (order.order_items || []).flatMap((item: any) => {
       return (item.order_item_projects || [])
         .filter((proj: any) => proj.is_deleted !== true)
+        .filter((proj: any) => {
+          // 🌟 1. กรองตามพื้นที่ (Area)
+          const projArea = Number(proj.area_sqm) || 0;
+          if (minAreaFilter !== null && projArea < minAreaFilter) return false;
+          if (maxAreaFilter !== null && projArea > maxAreaFilter) return false;
+
+          // 🌟 2. กรองตาม Role ของผู้เกี่ยวข้อง (Stakeholders)
+          if (roleFilter !== 'ALL') {
+            const hasDev = !!proj.account_developer || !!proj.contact_developer;
+            const hasArch = !!proj.account_architecture || !!proj.contact_architecture;
+            const hasInt = !!proj.account_interior || !!proj.contact_interior;
+            const hasCont = !!proj.account_contractor || !!proj.contact_contractor;
+
+            if (roleFilter === 'developer' && !hasDev) return false;
+            if (roleFilter === 'architect' && !hasArch) return false;
+            if (roleFilter === 'interior' && !hasInt) return false;
+            if (roleFilter === 'contractor' && !hasCont) return false;
+          }
+
+          return true; // ถ้าผ่านทุกด่าน ให้ปล่อยผ่าน
+        })
         .map((proj: any) => {
           
           let imagesArray: string[] = [];
@@ -96,11 +123,14 @@ export default async function UserCheckInHistoryPage({
             accuracy: auditLog?.location?.accuracy,
             device: auditLog?.device?.brand ? `${auditLog.device.brand} ${auditLog.device.model}` : 'ไม่ระบุอุปกรณ์',
             note: item.note || '-',
-            // 🌟 จุดที่ 2: แมปค่าเข้าตัวแปรเพื่อเอาไปใช้ใน UI
-            developer: proj.account_developer,
-            architect: proj.account_architecture,
-            interior: proj.account_interior,
-            contractor: proj.account_contractor,
+            developerAcc: proj.account_developer,
+            developerContact: proj.contact_developer,
+            architectAcc: proj.account_architecture,
+            architectContact: proj.contact_architecture,
+            interiorAcc: proj.account_interior,
+            interiorContact: proj.contact_interior,
+            contractorAcc: proj.account_contractor,
+            contractorContact: proj.contact_contractor,
           };
         });
     });
@@ -164,8 +194,10 @@ export default async function UserCheckInHistoryPage({
             <div className="relative border-l-[3px] border-slate-100 ml-4 md:ml-6 space-y-12 py-4">
               {checkIns.map((ci, index) => {
                 
-                // 🌟 ตรวจสอบว่ามีผู้เกี่ยวข้องอย่างน้อย 1 คนหรือไม่
-                const hasStakeholders = ci.developer || ci.architect || ci.interior || ci.contractor;
+                const hasStakeholders = ci.developerAcc || ci.developerContact || 
+                                        ci.architectAcc || ci.architectContact || 
+                                        ci.interiorAcc || ci.interiorContact || 
+                                        ci.contractorAcc || ci.contractorContact;
 
                 return (
                   <div key={index} className="relative pl-10 md:pl-14">
@@ -175,7 +207,7 @@ export default async function UserCheckInHistoryPage({
                     
                     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 bg-slate-50/60 hover:bg-slate-50 p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm transition-all duration-300">
                       
-                      {/* 1. ข้อมูลฝั่งซ้าย (xl:col-span-4) */}
+                      {/* 1. ข้อมูลฝั่งซ้าย */}
                       <div className="col-span-1 xl:col-span-4 flex flex-col justify-start">
                         <div className="flex items-center flex-wrap gap-2 mb-3">
                           <h3 className="text-xl font-bold text-slate-800 leading-tight">{ci.projectName}</h3>
@@ -186,7 +218,15 @@ export default async function UserCheckInHistoryPage({
                           )}
                         </div>
                         
-                       
+                        {ci.lat && ci.lng ? (
+                          <div className="flex items-center gap-1.5 text-rose-600 text-sm font-bold mb-5 bg-rose-50 w-fit px-3 py-1.5 rounded-lg border border-rose-100">
+                            <MapPin size={16} /> {ci.lat.toFixed(5)}, {ci.lng.toFixed(5)}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-slate-400 text-sm font-medium mb-5">
+                            <MapPin size={16} /> ไม่พบข้อมูลพิกัด
+                          </div>
+                        )}
                         
                         <div className="flex flex-col gap-3 text-[15px] mb-6">
                           <div className="flex items-center gap-2.5 text-slate-700 font-medium">
@@ -203,37 +243,45 @@ export default async function UserCheckInHistoryPage({
                           </div>
                         </div>
 
-                        {/* 🌟 จุดที่ 3: แทรกผู้เกี่ยวข้องโครงการตรงนี้ (ถ้ามี) */}
                         {hasStakeholders && (
                           <div className="mb-6 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                            <div className="text-[11px] font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                              <Users size={14} className="text-slate-400" /> ข้อมูลผู้เกี่ยวข้อง
+                            <div className="text-[12px] font-bold text-slate-600 uppercase mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                              <Users size={16} className="text-indigo-500" /> ข้อมูลผู้เกี่ยวข้อง
                             </div>
-                            <div className="grid grid-cols-2 gap-y-3 gap-x-2">
-                              {ci.developer && (
-                                <div className="flex flex-col">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase">Developer</span>
-                                  <span className="text-sm text-slate-700 font-semibold truncate" title={ci.developer}>บริษัท: {ci.developer}</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              
+                              {(ci.developerAcc || ci.developerContact) && (
+                                <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Developer</span>
+                                  {ci.developerContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.developerContact}>{ci.developerContact}</span>}
+                                  {ci.developerAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.developerAcc}>{ci.developerContact ? `บ. ${ci.developerAcc}` : ci.developerAcc}</span>}
                                 </div>
                               )}
-                              {ci.architect && (
-                                <div className="flex flex-col">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase">Architect</span>
-                                  <span className="text-sm text-slate-700 font-semibold truncate" title={ci.architect}>บริษัท:{ci.architect}</span>
+
+                              {(ci.architectAcc || ci.architectContact) && (
+                                <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Architect</span>
+                                  {ci.architectContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.architectContact}>{ci.architectContact}</span>}
+                                  {ci.architectAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.architectAcc}>{ci.architectContact ? `บ. ${ci.architectAcc}` : ci.architectAcc}</span>}
                                 </div>
                               )}
-                              {ci.interior && (
-                                <div className="flex flex-col">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase">Interior</span>
-                                  <span className="text-sm text-slate-700 font-semibold truncate" title={ci.interior}>บริษัท:{ci.interior}</span>
+
+                              {(ci.interiorAcc || ci.interiorContact) && (
+                                <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Interior</span>
+                                  {ci.interiorContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.interiorContact}>{ci.interiorContact}</span>}
+                                  {ci.interiorAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.interiorAcc}>{ci.interiorContact ? `บ. ${ci.interiorAcc}` : ci.interiorAcc}</span>}
                                 </div>
                               )}
-                              {ci.contractor && (
-                                <div className="flex flex-col">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase">Contractor</span>
-                                  <span className="text-sm text-slate-700 font-semibold truncate" title={ci.contractor}>บริษัท:{ci.contractor}</span>
+
+                              {(ci.contractorAcc || ci.contractorContact) && (
+                                <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Contractor</span>
+                                  {ci.contractorContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.contractorContact}>{ci.contractorContact}</span>}
+                                  {ci.contractorAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.contractorAcc}>{ci.contractorContact ? `บ. ${ci.contractorAcc}` : ci.contractorAcc}</span>}
                                 </div>
                               )}
+
                             </div>
                           </div>
                         )}
@@ -249,7 +297,7 @@ export default async function UserCheckInHistoryPage({
                         </div>
                       </div>
 
-                      {/* 2. แผนที่ (xl:col-span-5) */}
+                      {/* 2. แผนที่ */}
                       <div className="col-span-1 xl:col-span-5 flex flex-col">
                         <div className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5">
                           <Map size={16} /> ตำแหน่งที่ตั้ง
@@ -282,7 +330,7 @@ export default async function UserCheckInHistoryPage({
                         )}
                       </div>
 
-                      {/* 3. รูปภาพหน้างาน (xl:col-span-3) */}
+                      {/* 3. รูปภาพหน้างาน */}
                       <div className="col-span-1 xl:col-span-3 flex flex-col overflow-hidden">
                         <div className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5">
                           <ImageIcon size={16} /> รูปภาพหน้างาน ({ci.images.length})

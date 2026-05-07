@@ -1,3 +1,4 @@
+//src/app/upload/page.tsx
 'use client';
 
 import { useState, useRef } from 'react';
@@ -9,6 +10,9 @@ export default function ExcelUploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  
+  // ✨ เพิ่ม State สำหรับเก็บ % การโหลด
+  const [uploadProgress, setUploadProgress] = useState(0); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement> | any) => {
@@ -33,21 +37,37 @@ export default function ExcelUploadPage() {
   const handleUpload = async () => {
     if (previewData.length === 0) return alert('ไม่มีข้อมูลในไฟล์');
     setIsUploading(true);
+    setUploadProgress(0); // รีเซ็ต % เริ่มต้น
+
+    // ✨ หั่นข้อมูลทีละ 50 แถว เพื่อไม่ให้ Vercel Timeout
+    const CHUNK_SIZE = 50; 
+    const totalChunks = Math.ceil(previewData.length / CHUNK_SIZE);
+    let successCount = 0;
 
     try {
-      // 🚀 ยิงตรง ไม่ต้องเช็ค Login ใดๆ ทั้งสิ้น
-      const response = await fetch('/upload-excel', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ excelData: previewData }),
-      });
+      for (let i = 0; i < totalChunks; i++) {
+        // หั่นก้อนข้อมูล
+        const chunkData = previewData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+        // ยิง API เฉพาะก้อนนี้
+        const response = await fetch('/upload-excel', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ excelData: chunkData }),
+        });
 
-      alert('✅ อัปโหลดและกระจายข้อมูลสำเร็จ!');
+        const result = await response.json();
+        if (!response.ok) throw new Error(`ล้มเหลวที่แถว ${successCount + 1}: ${result.error}`);
+
+        // อัปเดต % เมื่อก้อนนี้สำเร็จ
+        successCount += chunkData.length;
+        setUploadProgress(Math.round((successCount / previewData.length) * 100));
+      }
+
+      alert('✅ อัปโหลดและกระจายข้อมูลสำเร็จทั้งหมด!');
       setFile(null);
       setPreviewData([]);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
 
     } catch (error: any) {
@@ -116,7 +136,8 @@ export default function ExcelUploadPage() {
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               {isUploading ? <Loader2 className="animate-spin" size={20} /> : <UploadCloud size={20} />}
-              {isUploading ? 'กำลังประมวลผล...' : `นำเข้าข้อมูล ${previewData.length} แถว`}
+              {/* ✨ แสดง % ตรงนี้ตอนกำลังประมวลผล */}
+              {isUploading ? `กำลังประมวลผล... ${uploadProgress}%` : `นำเข้าข้อมูล ${previewData.length} แถว`}
             </button>
           </div>
         )}
