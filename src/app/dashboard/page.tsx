@@ -109,15 +109,10 @@ export default async function DashboardPage({
     }
   }
 
-  // --- กรองข้อมูล (ตามโค้ดเดิมของนาย แต่เพิ่มอภิสิทธิ์ให้ VIP!) ---
+// --- ตรงส่วนการกรองข้อมูล (filteredProjects) ---
   const filteredProjects = allActiveProjects.filter(proj => {
-    // 1. เตะ "ไม่มีการระบุโครงการ" ทิ้ง (ยกเว้นมันเป็น VIP เราจะเก็บไว้ด่าเซลส์ 555)
-    if (proj.project_name === 'ไม่มีการระบุโครงการ' && !proj.is_important) return false;
-
-    // 🌟 2. อภิสิทธิ์ VIP: ถ้าติดดาว ให้รอดตัวกรองเซลส์/ทีม ไปเลย!
-    if (proj.is_important) return true;
-
-    // 3. กรองตามปกติ
+    
+    // ปล่อยผ่านให้หมดทุกชื่อโครงการ! เพื่อให้สถิติ Dashboard รวมครบ 700+ รายการ
     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = item?.orders;
     

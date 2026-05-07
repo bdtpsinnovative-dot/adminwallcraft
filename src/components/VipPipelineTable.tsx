@@ -7,19 +7,30 @@ export default function VipPipelineTable({ projects }: { projects: any[] }) {
   const [sortArea, setSortArea] = useState<'desc' | 'asc' | 'none'>('none');
 
   let displayProjects = projects.filter(proj => {
+    // 1. เช็คความสำคัญ (ติดดาว)
     const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
 
+    // 2. จับตายชื่อโปรเจกต์ที่เป็นค่าว่าง หรือมีคำว่า "ไม่มีการระบุโครงการ" (ใช้ includes เผื่อมีเคาะเว้นวรรค)
+    const isNoName = !proj.project_name || 
+                     proj.project_name.trim() === "" || 
+                     proj.project_name.includes("ไม่มีการระบุโครงการ");
+
+    // แท็บ 1: โครงการติดดาว -> โชว์ทุกอันที่ติดดาว (แม้จะไม่มีชื่อก็โชว์)
     if (tab === 1) return isVip; 
-    if (tab === 2) return true; 
+    
+    // แท็บ 2: โครงการทั้งหมด -> โชว์ทั้งหมด **ยกเว้น** พวกที่ไม่มีการระบุโครงการ
+    if (tab === 2) return !isNoName; 
+    
+    // แท็บ 3: มี SQM แต่ไม่มีชื่อ -> โชว์พวกที่ไม่มีชื่อ แต่มีการกรอกพื้นที่
     if (tab === 3) {
       const hasArea = Number(proj.area_sqm) > 0;
-      const noName = !proj.project_name || proj.project_name.trim() === "" || proj.project_name === "ไม่มีการระบุโครงการ";
-      return hasArea && noName;
+      return hasArea && isNoName;
     }
     
     return true;
   });
 
+  // ระบบเรียงลำดับ SQM
   displayProjects = displayProjects.sort((a, b) => {
     const areaA = Number(a.area_sqm) || 0;
     const areaB = Number(b.area_sqm) || 0;
@@ -80,11 +91,9 @@ export default function VipPipelineTable({ projects }: { projects: any[] }) {
       </div>
 
       <div className="overflow-x-auto overflow-y-auto max-h-[400px] relative">
-        {/* เอา whitespace-nowrap ออก เพื่อไม่ให้ตารางมันถ่างจนทะลุจอ */}
         <table className="w-full text-left text-sm table-fixed min-w-[500px]">
           <thead className="text-slate-500 text-xs uppercase font-bold tracking-wider sticky top-0 z-10 shadow-sm">
             <tr>
-              {/* กำหนด % ความกว้างให้ชัดเจน จะได้ไม่แย่งที่กัน */}
               <th className="px-4 py-3 border-b border-slate-200 bg-slate-50 w-[50%]">ชื่อโปรเจกต์</th>
               <th className="px-4 py-3 border-b border-slate-200 bg-slate-50 w-[25%]">ลูกค้า</th>
               <th className="px-4 py-3 border-b border-slate-200 bg-slate-50 text-right w-[25%]">พื้นที่ (ตร.ม.)</th>
@@ -103,7 +112,6 @@ export default function VipPipelineTable({ projects }: { projects: any[] }) {
                 return (
                   <tr key={proj.id || idx} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 align-middle">
-                      {/* ย้าย flex มาอยู่ใน div แทน เพื่อไม่ให้ layout ตารางพัง */}
                       <div className="font-semibold text-slate-800 flex items-start gap-2">
                         {isItemVip && <Star size={14} className="text-rose-500 fill-rose-500 shrink-0 mt-0.5" />}
                         <span className="whitespace-normal break-words line-clamp-2">
