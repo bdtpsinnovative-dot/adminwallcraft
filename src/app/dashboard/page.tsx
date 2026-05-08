@@ -9,7 +9,7 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import Link from 'next/link';
 import { ChevronRight, Smartphone, FileText } from 'lucide-react';
-import SalesPerformanceTable from '@/components/SalesPerformanceTable';
+// ลบ import SalesPerformanceTable ออกแล้วครับ
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +54,7 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 3. ดึงข้อมูลโปรเจกต์ (แก้ให้ดึง VIP มาตลอด ไม่สนวันที่!) ---
+  // --- 3. ดึงข้อมูลโปรเจกต์ ---
   let allActiveProjects: any[] = [];
   let isFetching = true;
   let startRow = 0;
@@ -108,7 +108,7 @@ export default async function DashboardPage({
     }
   }
 
-  // --- ตรงส่วนการกรองข้อมูล (filteredProjects) ---
+  // --- กรองข้อมูล ---
   const filteredProjects = allActiveProjects.filter(proj => {
     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = item?.orders;
@@ -259,7 +259,7 @@ export default async function DashboardPage({
     totalStakeholders: totalStakeholders
   };
 
-  // --- 5. สรุปข้อมูลการเช็คอิน (แยกนับยอด App และ CSV ออกจากกัน) ---
+  // --- 5. สรุปข้อมูลการเช็คอิน ---
   const checkInStats: Record<string, { appCount: number, csvCount: number, locations: string[] }> = {};
 
   filteredProjects.forEach(proj => {
@@ -383,17 +383,16 @@ export default async function DashboardPage({
         sourceData={sourceChartData} interestData={interestData} stakeholderData={stakeholderData}
       />
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
-        
-        {/* ตารางฝั่งซ้าย: โปรเจกต์แทรคเกอร์ */}
-        <VipPipelineTable projects={filteredProjects} />
-        
-        {/* 🌟 ฝั่งขวา: ตารางผลงานยอดขายแบบมีฟิลเตอร์เรียงลำดับ! (ใช้ Component แค่บรรทัดเดียวจบ) */}
-        <SalesPerformanceTable stats={individualStats} />
-        
+     {/* 🌟 แสดงตารางเดียวแบบกางเต็มจอ */}
+      <div className="grid grid-cols-1 mb-8">
+        <VipPipelineTable 
+          projects={filteredProjects} 
+          profilesMap={profileMap} 
+          salesStats={individualStats} 
+        />
       </div>
 
-      {/* --- ตารางสรุปการเช็คอินของเซลส์ (แยก App และ CSV) --- */}
+      {/* --- ตารางสรุปการเช็คอินของเซลส์ --- */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mb-8">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">

@@ -437,8 +437,8 @@ export default function DetailedDataCheckerPage() {
     URL.revokeObjectURL(url);
   };
 
-  // --- Component ย่อยสำหรับช่องปกติ ---
-  const EditableCell = ({ row, field, type = "text", width = "w-full" }: { row: any, field: string, type?: string, width?: string }) => {
+// --- ฟังก์ชันสำหรับ Render ช่องปกติ ---
+  const renderEditableCell = (row: any, field: string, type = "text", width = "w-full") => {
     if (!isEditMode) return <span className="truncate block">{row[field] || "-"}</span>;
     let value = drafts[row.id]?.[field] ?? row[field] ?? "";
     if (type === "datetime-local" && value && !drafts[row.id]?.[field]) value = new Date(value).toISOString().slice(0, 16);
@@ -449,8 +449,8 @@ export default function DetailedDataCheckerPage() {
     );
   };
 
-  // --- Component โชว์ ชื่อ + เบอร์ติดต่อ ในช่องเดียว ---
-  const ContactCell = ({ row, accountField, contactField }: { row: any, accountField: string, contactField: string }) => {
+  // --- ฟังก์ชันสำหรับ Render ชื่อ + เบอร์ติดต่อ ---
+  const renderContactCell = (row: any, accountField: string, contactField: string) => {
     if (!isEditMode) {
       return (
         <div className="flex flex-col gap-0.5 max-w-[180px]">
@@ -657,11 +657,10 @@ export default function DetailedDataCheckerPage() {
                       {row.data_source === "IMPORT" ? <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px] w-fit mx-auto">📁 นำเข้าไฟล์</span> : <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] w-fit mx-auto">📱 ผ่านแอปฯ</span>}
                     </td>
 
-                    <td className="px-3 py-1.5 border-r font-medium min-w-[200px] max-w-[250px]"><EditableCell row={row} field="project_name" /></td>
-                    <td className="px-3 py-1.5 border-r text-right min-w-[80px]"><EditableCell row={row} field="area_sqm" type="number" /></td>
-                    <td className="px-3 py-1.5 border-r min-w-[150px] max-w-[200px]"><EditableCell row={row} field="customer_name" /></td>
-                    <td className="px-3 py-1.5 border-r min-w-[120px] max-w-[150px]"><EditableCell row={row} field="phone" /></td>
-                    
+                    <td className="px-3 py-1.5 border-r font-medium min-w-[200px] max-w-[250px]">{renderEditableCell(row, "project_name")}</td>
+<td className="px-3 py-1.5 border-r text-right min-w-[80px]">{renderEditableCell(row, "area_sqm", "number")}</td>
+<td className="px-3 py-1.5 border-r min-w-[150px] max-w-[200px]">{renderEditableCell(row, "customer_name")}</td>
+<td className="px-3 py-1.5 border-r min-w-[120px] max-w-[150px]">{renderEditableCell(row, "phone")}</td>
                     {/* คอลัมน์ "เซลส์ดูแล" แก้ไขได้ด้วย Dropdown */}
                     <td className="px-3 py-1.5 border-r min-w-[140px] text-gray-600">
                       {isEditMode ? (
@@ -703,14 +702,13 @@ export default function DetailedDataCheckerPage() {
                       ) : <span className="truncate block" title={row.product_category_name}>{row.product_category_name}</span>}
                     </td>
 
-                    <td className="px-3 py-1.5 border-r min-w-[100px]"><EditableCell row={row} field="interest_level" /></td>
-                    <td className="px-3 py-1.5 border-r min-w-[200px] max-w-[300px]"><EditableCell row={row} field="note" /></td>
-                    
-                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_developer" contactField="contact_developer" /></td>
-                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_architecture" contactField="contact_architecture" /></td>
-                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_interior" contactField="contact_interior" /></td>
-                    <td className="px-3 py-2 border-r align-top"><ContactCell row={row} accountField="account_contractor" contactField="contact_contractor" /></td>
+                    <td className="px-3 py-1.5 border-r min-w-[100px]">{renderEditableCell(row, "interest_level")}</td>
+<td className="px-3 py-1.5 border-r min-w-[200px] max-w-[300px]">{renderEditableCell(row, "note")}</td>
 
+<td className="px-3 py-2 border-r align-top">{renderContactCell(row, "account_developer", "contact_developer")}</td>
+<td className="px-3 py-2 border-r align-top">{renderContactCell(row, "account_architecture", "contact_architecture")}</td>
+<td className="px-3 py-2 border-r align-top">{renderContactCell(row, "account_interior", "contact_interior")}</td>
+<td className="px-3 py-2 border-r align-top">{renderContactCell(row, "account_contractor", "contact_contractor")}</td>
                     {!isEditMode && (
                       <td className="px-2 py-1.5 border-l sticky right-0 z-10 text-center bg-inherit shadow-[-1px_0_0_#e5e7eb]">
                         <div className="flex justify-center gap-1">
