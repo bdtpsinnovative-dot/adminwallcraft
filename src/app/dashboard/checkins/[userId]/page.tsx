@@ -252,7 +252,7 @@ export default async function UserCheckInHistoryPage({
                               
                               {(ci.developerAcc || ci.developerContact) && (
                                 <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Developer</span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Developer</span>
                                   {ci.developerContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.developerContact}>{ci.developerContact}</span>}
                                   {ci.developerAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.developerAcc}>{ci.developerContact ? `บ. ${ci.developerAcc}` : ci.developerAcc}</span>}
                                 </div>
@@ -260,7 +260,7 @@ export default async function UserCheckInHistoryPage({
 
                               {(ci.architectAcc || ci.architectContact) && (
                                 <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Architect</span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Architect</span>
                                   {ci.architectContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.architectContact}>{ci.architectContact}</span>}
                                   {ci.architectAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.architectAcc}>{ci.architectContact ? `บ. ${ci.architectAcc}` : ci.architectAcc}</span>}
                                 </div>
@@ -268,7 +268,7 @@ export default async function UserCheckInHistoryPage({
 
                               {(ci.interiorAcc || ci.interiorContact) && (
                                 <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Interior</span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Interior</span>
                                   {ci.interiorContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.interiorContact}>{ci.interiorContact}</span>}
                                   {ci.interiorAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.interiorAcc}>{ci.interiorContact ? `บ. ${ci.interiorAcc}` : ci.interiorAcc}</span>}
                                 </div>
@@ -276,7 +276,7 @@ export default async function UserCheckInHistoryPage({
 
                               {(ci.contractorAcc || ci.contractorContact) && (
                                 <div className="flex flex-col bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                  <span className="text-[20px] text-slate-400 font-bold uppercase mb-0.5">Contractor</span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Contractor</span>
                                   {ci.contractorContact && <span className="text-sm text-slate-700 font-bold truncate" title={ci.contractorContact}>{ci.contractorContact}</span>}
                                   {ci.contractorAcc && <span className="text-[11px] text-slate-500 truncate" title={ci.contractorAcc}>{ci.contractorContact ? `บ. ${ci.contractorAcc}` : ci.contractorAcc}</span>}
                                 </div>

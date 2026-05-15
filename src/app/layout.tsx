@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // 🛡️ 1. เช็คว่าเป็นหน้า Public (หน้าบ้าน หรือ หน้า Login) หรือไม่?
   const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog'); // แอบเพิ่ม /catalog ให้เผื่อไว้ด้วยครับ จะได้ไม่ติด Layout
 
-  // 📝 รายการเมนู
+// 📝 รายการเมนู
   const menuGroups = [
     {
       title: 'Overview & AI',
@@ -40,13 +40,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       title: 'Inventory & Operations',
       items: [
         { name: 'จัดการสินค้า', path: '/manage-products', icon: Package, color: 'blue' },
+        // 🌟 เพิ่มปุ่มใหม่ตรงนี้ครับนาย! 🌟
+        { name: 'จัดการคลังสินค้า', path: '/inventory/master', icon: ShoppingBag, color: 'blue' }, 
         { name: 'ตรวจสอบข้อมูล', path: '/check-data', icon: SearchCheck, color: 'blue' },
       ]
     },
     {
       title: 'Digital Assets',
       items: [
-        // 🌟 2. เพิ่มเมนู E-Catalog เข้ามาตรงนี้ครับนาย! 🌟
         { name: 'จัดการ E-Catalog', path: '/ebook', icon: BookOpen, color: 'blue' },
         { name: 'แกลเลอรีแผ่นไม้ R2', path: '/gallery-woodslabs', icon: Sparkles, color: 'purple' },
         { name: 'รูปภาพต้นฉบับ R2', path: '/gallery-original', icon: ImageIcon, color: 'blue' },

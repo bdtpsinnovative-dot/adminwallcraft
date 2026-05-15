@@ -6,19 +6,20 @@ import {
   CalendarDays, Smartphone, FileText 
 } from 'lucide-react';
 
+// 🌟 เพิ่ม customerTypes เข้ามาใน Props
 interface Props {
   projects: any[];
   profilesMap: Record<string, string>;
   salesStats: any[];
+  customerTypes: { id: string; name: string }[]; 
 }
 
-export default function VipPipelineTable({ projects, profilesMap, salesStats }: Props) {
+export default function VipPipelineTable({ projects, profilesMap, salesStats, customerTypes = [] }: Props) {
   const [viewMode, setViewMode] = useState<'projects' | 'performance'>('projects');
   const [tab, setTab] = useState(2);
   const [sortArea, setSortArea] = useState<'desc' | 'asc' | 'none'>('none');
   const [sortBySales, setSortBySales] = useState<'projects' | 'area'>('projects');
 
-  // ฟังก์ชันแปลงวันที่ให้อ่านง่าย (วว/ดด/ปปปป)
   const formatDate = (isoString?: string) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -61,11 +62,32 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats }: 
     return 0;
   });
 
+  // 🌟 ฟังก์ชันแยกสีตามชื่อ Type
+  const getRoleColor = (roleName: string) => {
+    const name = roleName.toLowerCase();
+    if (name.includes('dev')) return 'bg-blue-100 text-blue-700';
+    if (name.includes('arch')) return 'bg-purple-100 text-purple-700';
+    if (name.includes('interior')) return 'bg-pink-100 text-pink-700';
+    if (name.includes('contractor')) return 'bg-orange-100 text-orange-700';
+    if (name.includes('office')) return 'bg-emerald-100 text-emerald-700';
+    return 'bg-slate-100 text-slate-700'; // สี Default
+  };
+
+  // 🌟 ฟังก์ชันหาคนดูแลแบบดึงตาม Database
   const getActiveAccount = (proj: any) => {
-    if (proj.account_developer?.trim()) return { role: 'Dev', name: proj.account_developer, color: 'bg-blue-100 text-blue-700' };
-    if (proj.account_architecture?.trim()) return { role: 'Arch', name: proj.account_architecture, color: 'bg-purple-100 text-purple-700' };
-    if (proj.account_interior?.trim()) return { role: 'Interior', name: proj.account_interior, color: 'bg-pink-100 text-pink-700' };
-    if (proj.account_contractor?.trim()) return { role: 'Contractor', name: proj.account_contractor, color: 'bg-orange-100 text-orange-700' };
+    // วนลูปเช็คประเภทจาก DB ที่โยนเข้ามา
+    for (const type of customerTypes) {
+      const key = `account_${type.name.toLowerCase()}`;
+      const accountName = proj[key];
+
+      if (accountName && typeof accountName === 'string' && accountName.trim()) {
+        return {
+          role: type.name, 
+          name: accountName.trim(),
+          color: getRoleColor(type.name)
+        };
+      }
+    }
     return null;
   };
 
@@ -125,17 +147,16 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats }: 
 
       <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         {viewMode === 'projects' ? (
-          /* 🌟 ขยายเป็น 1200px รองรับ 7 คอลัมน์แบบสบายๆ */
           <table className="w-full text-left text-sm table-fixed min-w-[1200px]">
             <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
               <tr>
                 <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">วันที่</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%] text-center">ช่องทาง</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[20%]">โปรเจกต์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ลูกค้า</th>
                 <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">เซลส์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[18%]">ผู้ดูแล (Account)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 text-right w-[12%]">พื้นที่ (ตร.ม.)</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ผู้ดูแล (ACCOUNT)</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[20%]">โปรเจกต์</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 text-right w-[10%]">พื้นที่ (ตร.ม.)</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ลูกค้า</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%] text-center">ช่องทาง</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -147,11 +168,11 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats }: 
                   const activeAccount = getActiveAccount(proj);
                   const salesName = profilesMap[order?.user_id] || 'ไม่ระบุ';
                   
-                  // 🌟 เช็ค Source (จาก audit_log)
                   const hasAuditLog = !!order?.audit_log;
 
                   return (
                     <tr key={proj.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                      {/* 1. วันที่ */}
                       <td className="px-5 py-4 align-middle">
                         <div className="flex items-center gap-1.5 text-slate-500 font-medium">
                           <CalendarDays size={14} className="text-slate-400" />
@@ -159,7 +180,43 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats }: 
                         </div>
                       </td>
                       
-                      {/* 🌟 แสดงป้าย Source (ช่องทาง) */}
+                      {/* 2. เซลส์ */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold bg-slate-100 w-fit px-2 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                          <User size={12} className="shrink-0" /> 
+                          <span className="whitespace-normal break-words" title={salesName}>{salesName}</span>
+                        </div>
+                      </td>
+
+                      {/* 3. ผู้ดูแล (ACCOUNT) */}
+                      <td className="px-5 py-4">
+                        {activeAccount ? (
+                          <div className="flex flex-col items-start gap-1.5">
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${activeAccount.color} shrink-0 w-fit`}>{activeAccount.role}</span>
+                            <span className="text-slate-700 font-medium whitespace-normal break-words">{activeAccount.name}</span>
+                          </div>
+                        ) : <span className="text-slate-300">-</span>}
+                      </td>
+
+                      {/* 4. โปรเจกต์ */}
+                      <td className="px-5 py-4 align-middle">
+                        <div className="font-bold text-slate-800 flex items-start gap-2">
+                          {proj.is_important && <Star size={14} className="text-rose-500 fill-rose-500 mt-1 shrink-0" />}
+                          <span className="line-clamp-2">{proj.project_name || 'ไม่ได้ระบุชื่อ'}</span>
+                        </div>
+                      </td>
+
+                      {/* 5. พื้นที่ (ตร.ม.) */}
+                      <td className="px-5 py-4 text-right font-black text-emerald-600 text-base">
+                        {Number(proj.area_sqm).toLocaleString()}
+                      </td>
+
+                      {/* 6. ลูกค้า */}
+                      <td className="px-5 py-4 text-slate-600 font-medium whitespace-normal break-words line-clamp-2">
+                        {order?.customer_name || '-'}
+                      </td>
+                      
+                      {/* 7. ช่องทาง */}
                       <td className="px-5 py-4 align-middle text-center">
                         {hasAuditLog ? (
                           <div className="mx-auto flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded-md w-fit shadow-sm">
@@ -170,33 +227,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats }: 
                             <FileText size={12} /> CSV File
                           </div>
                         )}
-                      </td>
-
-                      <td className="px-5 py-4 align-middle">
-                        <div className="font-bold text-slate-800 flex items-start gap-2">
-                          {proj.is_important && <Star size={14} className="text-rose-500 fill-rose-500 mt-1 shrink-0" />}
-                          <span className="line-clamp-2">{proj.project_name || 'ไม่ได้ระบุชื่อ'}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-slate-600 font-medium whitespace-normal break-words line-clamp-2">
-                        {order?.customer_name || '-'}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold bg-slate-100 w-fit px-2 py-1.5 rounded-lg border border-slate-200 shadow-sm">
-                          <User size={12} className="shrink-0" /> 
-                          <span className="truncate max-w-[100px]" title={salesName}>{salesName}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        {activeAccount ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${activeAccount.color} shrink-0`}>{activeAccount.role}</span>
-                            <span className="text-slate-700 font-medium truncate max-w-[120px]" title={activeAccount.name}>{activeAccount.name}</span>
-                          </div>
-                        ) : <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="px-5 py-4 text-right font-black text-emerald-600 text-base">
-                        {Number(proj.area_sqm).toLocaleString()}
                       </td>
                     </tr>
                   );

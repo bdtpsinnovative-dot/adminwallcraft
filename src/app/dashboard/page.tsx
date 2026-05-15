@@ -25,16 +25,19 @@ export default async function DashboardPage({
   const params = await Promise.resolve(searchParams);
 
   // --- 1. ดึง Master Data มารอไว้ทั้งหมด ---
+  // --- 1. ดึง Master Data มารอไว้ทั้งหมด ---
   const [
     { data: profiles },
     { data: projectTypes },
     { data: productCategories },
-    { data: teams }
+    { data: teams },
+    { data: customerTypes } // 🌟 1. เพิ่มตัวแปรรับค่าตรงนี้
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name'),
     supabase.from('project_types').select('id, name'),
     supabase.from('product_categories').select('id, name'),
-    supabase.from('teams').select('id, team_name').order('team_name')
+    supabase.from('teams').select('id, team_name').order('team_name'),
+    supabase.from('customer_types').select('id, name') // 🌟 2. เพิ่มคำสั่งดึงข้อมูลตรงนี้
   ]);
 
   const profileMap: Record<string, string> = {};
@@ -389,6 +392,7 @@ export default async function DashboardPage({
           projects={filteredProjects} 
           profilesMap={profileMap} 
           salesStats={individualStats} 
+          customerTypes={customerTypes || []} // 🌟 3. ส่ง Props ตรงนี้
         />
       </div>
 

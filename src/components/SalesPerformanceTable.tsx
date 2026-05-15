@@ -1,3 +1,5 @@
+//src/components/SalesPerformanceTable.tsx
+
 'use client';
 import { useState } from 'react';
 import { Target, Trophy, Maximize2 } from 'lucide-react';

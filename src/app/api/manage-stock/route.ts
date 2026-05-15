@@ -6,13 +6,27 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 📌 ดึงข้อมูลสต็อกปัจจุบัน
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const type = searchParams.get('type'); // รับค่า 'balance', 'in', หรือ 'out'
+
   try {
+    let tableName = 'stock_balance';
+    let orderBy = 'last_updated';
+
+    // เช็คเงื่อนไขว่าเป็นตารางไหน
+    if (type === 'in') {
+      tableName = 'stock_in';
+      orderBy = 'date_in';
+    } else if (type === 'out') {
+      tableName = 'stock_out';
+      orderBy = 'date_out'; // เรียงตามวันที่ออก
+    }
+
     const { data, error } = await supabase
-      .from('stock_balance')
+      .from(tableName)
       .select('*')
-      .order('last_updated', { ascending: false });
+      .order(orderBy, { ascending: false });
 
     if (error) throw error;
     return NextResponse.json({ success: true, data });
@@ -21,26 +35,18 @@ export async function GET() {
   }
 }
 
-// 📌 อัปเดตยอดสต็อก (และบันทึกเวลาอัปเดต)
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, new_qty } = body;
-
-    if (!id || new_qty === undefined) {
-      return NextResponse.json({ success: false, error: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
-    }
+    const { id, new_qty, table } = body; 
 
     const { error } = await supabase
-      .from('stock_balance')
-      .update({ 
-        qty: new_qty, 
-        last_updated: new Date().toISOString() 
-      })
+      .from(table)
+      .update({ qty: new_qty })
       .eq('id', id);
 
     if (error) throw error;
-    return NextResponse.json({ success: true, message: 'อัปเดตสต็อกเรียบร้อยแล้ว' });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
