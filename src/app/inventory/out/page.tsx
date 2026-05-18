@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment } from 'react';
-import { Search, Warehouse, Inbox, Truck, Route, Boxes, X, CheckCircle2, AlertCircle, Edit, Image as ImageIcon } from 'lucide-react';
+import { Search, Warehouse, Inbox, Truck, Route, Boxes, X, CheckCircle2, AlertCircle, Edit, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -14,8 +14,13 @@ export default function OutInventoryPage() {
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'success', title: '', message: '' });
   const [editModal, setEditModal] = useState<{ isOpen: boolean, item: any }>({ isOpen: false, item: null });
   const [txForm, setTxForm] = useState({ qty: '', quotation: '', invoice_tps: '' });
-  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, out_id: string, new_status: 'approved' | 'rejected', title: string, message: string }>({ 
-    isOpen: false, out_id: '', new_status: 'approved', title: '', message: '' 
+  
+  // 🟢 1. เพิ่ม State มารับค่า Input เอกสารใน Modal ยืนยัน
+  const [confirmModal, setConfirmModal] = useState<{ 
+    isOpen: boolean, item: any, new_status: 'approved' | 'rejected', title: string, message: string, 
+    needsInput: boolean, quotation: string, invoice_tps: string 
+  }>({ 
+    isOpen: false, item: null, new_status: 'approved', title: '', message: '', needsInput: false, quotation: '', invoice_tps: '' 
   });
 
   useEffect(() => {
@@ -71,20 +76,49 @@ export default function OutInventoryPage() {
     }
   };
 
-  const openApprovalConfirm = (out_id: string, status: 'approved' | 'rejected') => {
+// 🟢 ปรับให้รองรับการ Undo (เปลี่ยนกลับเป็น pending)
+  const openApprovalConfirm = (item: any, status: 'approved' | 'rejected' | 'pending') => {
+    const isMissingDocs = !item.quotation || !item.invoice_tps; 
+    const needsInput = status === 'approved' && isMissingDocs;
+
+    let title = '';
+    let message = '';
+
+    if (status === 'approved') {
+      title = 'ยืนยันการอนุมัติ';
+      message = needsInput ? 'กรุณาระบุเลข Quotation และ Invoice ให้ครบทั้ง 2 ช่องก่อนทำการอนุมัติ' : 'คุณแน่ใจหรือไม่ที่จะ "อนุมัติ" รถขนส่งสินค้านี้?';
+    } else if (status === 'rejected') {
+      title = 'ไม่อนุมัติ และ คืนสต็อก';
+      message = 'หากไม่อนุมัติ ระบบจะทำการ "คืนจำนวนสต็อก" กลับเข้าคลังโดยอัตโนมัติ คุณแน่ใจหรือไม่?';
+    } else if (status === 'pending') {
+      title = 'ย้อนกลับสถานะ (Undo)';
+      message = 'คุณต้องการยกเลิกการตัดสินใจ และเปลี่ยนสถานะกลับเป็น "รอดำเนินการ (Pending)" ใช่หรือไม่? (ระบบจะปรับปรุงยอดสต็อกให้ถูกต้องอัตโนมัติ)';
+    }
+
     setConfirmModal({
-      isOpen: true, out_id, new_status: status,
-      title: status === 'approved' ? 'ยืนยันการอนุมัติ' : 'ไม่อนุมัติ และ คืนสต็อก',
-      message: status === 'approved' ? 'คุณแน่ใจหรือไม่ที่จะ "อนุมัติ" รถขนส่งสินค้านี้?' : 'หากไม่อนุมัติ ระบบจะทำการ "คืนจำนวนสต็อก" กลับเข้าคลังโดยอัตโนมัติ คุณแน่ใจหรือไม่?'
+      isOpen: true, item, new_status: status as any, title, message,
+      needsInput, quotation: item.quotation || '', invoice_tps: item.invoice_tps || ''
     });
   };
 
-  const executeApproval = async () => {
+const executeApproval = async () => {
+    // เช็คว่าถ้าช่องใดช่องหนึ่งว่าง ให้เตือนเลย
+    if (confirmModal.needsInput && (!confirmModal.quotation || !confirmModal.invoice_tps)) {
+      showAlert('error', 'ข้อมูลไม่ครบ', 'ต้องกรอกเลข Quotation และ Invoice ให้ครบทั้ง 2 ช่องครับ');
+      return;
+    }
+
     try {
       const res = await fetch('/api/inventory-management', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_status_out', out_id: confirmModal.out_id, new_status: confirmModal.new_status }),
+        body: JSON.stringify({ 
+          action: 'update_status_out', 
+          out_id: confirmModal.item.id, 
+          new_status: confirmModal.new_status,
+          quotation: confirmModal.quotation, // ส่งข้อมูลที่กรอกใหม่ไปเซฟด้วย
+          invoice_tps: confirmModal.invoice_tps
+        }),
       });
       const result = await res.json();
       setConfirmModal({ ...confirmModal, isOpen: false });
@@ -169,7 +203,7 @@ export default function OutInventoryPage() {
               ) : filteredData.length === 0 ? (
                 <tr><td colSpan={12} className="p-8 text-center text-slate-500 border border-slate-300">ไม่พบข้อมูล</td></tr>
               ) : (
-                Object.entries(groupedData)as [string, any[]][]).map(([groupName, items]) => (
+                (Object.entries(groupedData) as [string, any[]][]).map(([groupName, items]) => (
                   <Fragment key={groupName}>
                     <tr className="bg-slate-100">
                       <td colSpan={12} className="px-3 py-1.5 border border-slate-300 font-bold text-slate-800">
@@ -197,16 +231,21 @@ export default function OutInventoryPage() {
                           {item.status === 'pending' ? (
                             <div className="flex justify-center gap-1">
                               <button onClick={() => openEditModal(item)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="แก้ไขข้อมูล"><Edit size={16} /></button>
-                              <button onClick={() => openApprovalConfirm(item.id, 'approved')} className="p-1 text-green-600 hover:bg-green-100 rounded" title="อนุมัติ"><CheckCircle2 size={16} /></button>
-                              <button onClick={() => openApprovalConfirm(item.id, 'rejected')} className="p-1 text-red-600 hover:bg-red-100 rounded" title="ไม่อนุมัติ"><X size={16} /></button>
+                              <button onClick={() => openApprovalConfirm(item, 'approved')} className="p-1 text-green-600 hover:bg-green-100 rounded" title="อนุมัติ"><CheckCircle2 size={16} /></button>
+                              <button onClick={() => openApprovalConfirm(item, 'rejected')} className="p-1 text-red-600 hover:bg-red-100 rounded" title="ไม่อนุมัติ"><X size={16} /></button>
                             </div>
-                          ) : null}
+                          ) : (
+                            // 🟢 ถ้ากดอนุมัติหรือปฏิเสธไปแล้ว ให้แสดงปุ่มย้อนกลับ (Undo)
+                            <div className="flex justify-center gap-1">
+                              <button onClick={() => openApprovalConfirm(item, 'pending')} className="p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors" title="ย้อนกลับเป็นสถานะ Pending"><RotateCcw size={16} /></button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </Fragment>
                 ))
-              }
+              )}
             </tbody>
           </table>
         </div>
@@ -230,15 +269,34 @@ export default function OutInventoryPage() {
         </div>
       )}
 
-      {confirmModal.isOpen && (
+      {/* 🟢 4. ปรับหน้าต่าง Confirm Modal ให้มีช่องกรอกเอกสาร */}
+      {confirmModal.isOpen && confirmModal.item && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center border border-slate-200">
             {confirmModal.new_status === 'approved' ? <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4"><Truck size={24} /></div> : <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4"><AlertCircle size={24} /></div>}
             <h3 className="text-lg font-bold text-slate-800 mb-2">{confirmModal.title}</h3>
-            <p className="text-slate-500 mb-6 text-sm">{confirmModal.message}</p>
+            <p className="text-slate-500 text-sm">{confirmModal.message}</p>
+
+            {/* 🟢 3. เติมดอกจันให้รู้ว่าบังคับกรอก */}
+            {confirmModal.needsInput && (
+              <div className="w-full text-left mt-4 mb-5 space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-md">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">เลขที่ใบเสนอราคา (Quotation) <span className="text-red-500">*</span></label>
+                  <input type="text" value={confirmModal.quotation} onChange={e => setConfirmModal({...confirmModal, quotation: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder="อ้างอิง..." autoFocus />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">เลขที่ใบแจ้งหนี้ (Invoice) <span className="text-red-500">*</span></label>
+                  <input type="text" value={confirmModal.invoice_tps} onChange={e => setConfirmModal({...confirmModal, invoice_tps: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder="อ้างอิง..." />
+                </div>
+              </div>
+            )}
+            {!confirmModal.needsInput && <div className="mb-6"></div>}
+
             <div className="flex gap-2 w-full">
               <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-2 bg-slate-100 text-slate-700 rounded border border-slate-300 hover:bg-slate-200 text-sm font-medium">ยกเลิก</button>
-              <button onClick={executeApproval} className={`flex-1 py-2 text-white rounded text-sm font-medium ${confirmModal.new_status === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>ยืนยัน</button>
+              <button onClick={executeApproval} className={`flex-1 py-2 text-white rounded text-sm font-medium ${confirmModal.new_status === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                ยืนยัน{confirmModal.needsInput && 'และบันทึก'}
+              </button>
             </div>
           </div>
         </div>

@@ -9,7 +9,6 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import Link from 'next/link';
 import { ChevronRight, Smartphone, FileText } from 'lucide-react';
-// ลบ import SalesPerformanceTable ออกแล้วครับ
 
 export const dynamic = 'force-dynamic';
 
@@ -24,24 +23,27 @@ export default async function DashboardPage({
 }) {
   const params = await Promise.resolve(searchParams);
 
-  // --- 1. ดึง Master Data มารอไว้ทั้งหมด ---
-  // --- 1. ดึง Master Data มารอไว้ทั้งหมด ---
+  // --- 1. ดึง Master Data ---
   const [
     { data: profiles },
     { data: projectTypes },
     { data: productCategories },
     { data: teams },
-    { data: customerTypes } // 🌟 1. เพิ่มตัวแปรรับค่าตรงนี้
+    { data: customerTypes }
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name'),
     supabase.from('project_types').select('id, name'),
     supabase.from('product_categories').select('id, name'),
     supabase.from('teams').select('id, team_name').order('team_name'),
-    supabase.from('customer_types').select('id, name') // 🌟 2. เพิ่มคำสั่งดึงข้อมูลตรงนี้
+    supabase.from('customer_types').select('id, name')
   ]);
 
   const profileMap: Record<string, string> = {};
   profiles?.forEach(p => { profileMap[p.id] = p.full_name; });
+
+  // 🟢 สร้าง Map สำหรับแปลง ID ประเภทโปรเจกต์เป็นชื่อภาษาไทย
+  const projectTypeMap: Record<string, string> = {};
+  projectTypes?.forEach(pt => { projectTypeMap[pt.id] = pt.name; });
 
   // --- 2. จัดการตัวแปร Filter ---
   let startIso = '';
@@ -145,8 +147,9 @@ export default async function DashboardPage({
   const salesPerformanceData: Record<string, { count: number, area: number, syncedCount: number, pendingCount: number }> = {};
   const dailyCountMap: Record<string, { date: string, count: number, timestamp: number }> = {};
   
-  let sourceMobile = 0, sourceWeb = 0, sourceCSV = 0;
-  
+  // 🟢 ตัวแปรสำหรับเก็บจำนวนแยกตามประเภทโครงการ
+  const projectTypeCountMap: Record<string, number> = {};
+
   let intVeryHigh = 0, intHigh = 0, intMedium = 0, intFollow = 0, intLow = 0, intNull = 0; 
   let devCount = 0, archCount = 0, intCount = 0, contCount = 0;
 
@@ -160,11 +163,11 @@ export default async function DashboardPage({
     
     if (proj.is_important) importantProjectsCount++;
 
-    const auditLog = order?.audit_log;
-    const orderSource = order?.source;
-    if (orderSource === 'web') sourceWeb += 1;
-    else if (!auditLog) sourceCSV += 1;
-    else sourceMobile += 1;
+    // 🟢 นับยอดประเภทโครงการ (คอนโด, โรงแรม ฯลฯ)
+    const pTypeId = proj.project_type_id;
+    const typeName = pTypeId && projectTypeMap[pTypeId] ? projectTypeMap[pTypeId] : 'ไม่ระบุประเภท';
+    if (!projectTypeCountMap[typeName]) projectTypeCountMap[typeName] = 0;
+    projectTypeCountMap[typeName]++;
 
     const interest = orderItem?.interest_level || '';
     if (interest.includes('สนใจมาก (มีโครงการ')) intVeryHigh++;
@@ -212,13 +215,15 @@ export default async function DashboardPage({
 
   const lineChartData = Object.values(dailyCountMap).sort((a, b) => a.timestamp - b.timestamp).slice(-14).map(i => ({ date: i.date, count: i.count }));
   
-  const totalSource = sourceMobile + sourceCSV + sourceWeb;
-  const sourceChartData = [
-    { name: `Mobile App (${totalSource > 0 ? Math.round((sourceMobile / totalSource) * 100) : 0}%)`, value: sourceMobile },
-    { name: `CSV Upload (${totalSource > 0 ? Math.round((sourceCSV / totalSource) * 100) : 0}%)`, value: sourceCSV },
-    { name: `Web Portal (${totalSource > 0 ? Math.round((sourceWeb / totalSource) * 100) : 0}%)`, value: sourceWeb }
-  ].filter(d => d.value > 0);
-  
+  // 🟢 แปลง Map ข้อมูลประเภทโครงการ เป็น Array สำหรับวาด Pie Chart
+  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
+  const projectTypeChartData = Object.entries(projectTypeCountMap)
+    .map(([name, count]) => ({
+      name: `${name} (${Math.round((count / projDivider) * 100)}%)`,
+      value: count
+    }))
+    .sort((a, b) => b.value - a.value);
+
   const interestData = [
     { name: 'สนใจมาก (มีโครงการ)', value: intVeryHigh },
     { name: 'สนใจมาก (ยังไม่มี)', value: intHigh },
@@ -228,8 +233,6 @@ export default async function DashboardPage({
     { name: 'ไม่ระบุ / NULL', value: intNull }
   ];
 
-  const totalStakeholders = devCount + archCount + intCount + contCount;
-  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
   const stakeholderData = [
     { name: `Developer (${Math.round((devCount / projDivider) * 100)}%)`, count: devCount },
     { name: `Architect (${Math.round((archCount / projDivider) * 100)}%)`, count: archCount },
@@ -246,7 +249,7 @@ export default async function DashboardPage({
     .sort((a, b) => b.projects - a.projects);
 
   const pieChartData = individualStats.map(stat => ({ name: stat.name, value: stat.projects }));
-  const barChartData = individualStats.slice(0, 10);
+  const barChartData = individualStats; 
 
   const vipProjects = filteredProjects.filter(p => p.is_important);
 
@@ -257,12 +260,10 @@ export default async function DashboardPage({
     pendingSyncCount: pendingSync,
     topSales: individualStats.slice(0, 3).map(s => ({ name: s.name, projects: s.projects, area: s.area })),
     vipList: vipProjects.map(v => v.project_name),
-    sourceStats: { mobile: sourceMobile, web: sourceWeb, csv: sourceCSV },
     interestStats: { hot: intVeryHigh + intHigh, warm: intMedium, cold: intLow + intFollow },
-    totalStakeholders: totalStakeholders
+    totalStakeholders: devCount + archCount + intCount + contCount
   };
 
-  // --- 5. สรุปข้อมูลการเช็คอิน ---
   const checkInStats: Record<string, { appCount: number, csvCount: number, locations: string[] }> = {};
 
   filteredProjects.forEach(proj => {
@@ -274,12 +275,9 @@ export default async function DashboardPage({
     if (!checkInStats[userId]) {
       checkInStats[userId] = { appCount: 0, csvCount: 0, locations: [] };
     }
-    
     if (auditLog) {
       checkInStats[userId].appCount += 1;
-      if (proj.project_name) {
-        checkInStats[userId].locations.push(proj.project_name);
-      }
+      if (proj.project_name) checkInStats[userId].locations.push(proj.project_name);
     } else {
       checkInStats[userId].csvCount += 1;
     }
@@ -324,18 +322,14 @@ export default async function DashboardPage({
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">
-                {(params?.start || params?.end || params?.sales || params?.projectType || params?.source) ? 'โปรเจกต์ (ตามเงื่อนไข)' : 'โปรเจกต์ทั้งหมด'}
-              </p>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">โปรเจกต์ทั้งหมด</p>
               <h2 className="text-3xl font-extrabold text-slate-800">{activeProjectsCount.toLocaleString()}</h2>
             </div>
             <div className="bg-blue-100 p-2.5 rounded-lg text-blue-600"><ShoppingCart size={22} /></div>
           </div>
           <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-emerald-600">
             <TrendingUp size={14} /> 
-            <span>
-              {params?.start || params?.end ? 'ตามตัวกรองที่เลือก' : `+${todayOrders} โปรเจกต์ใหม่วันนี้`}
-            </span>
+            <span>+{todayOrders} โปรเจกต์ใหม่วันนี้</span>
           </div>
         </div>
 
@@ -370,33 +364,25 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 mb-6">
-        <div className="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition hover:bg-blue-100">
-          <Database size={16} />
-          รวมข้อมูลที่มีแหล่งที่มา: <span className="text-lg bg-white px-2 rounded-md shadow-sm ml-1 text-blue-800">{totalSource.toLocaleString()}</span> รายการ
-        </div>
-        <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition hover:bg-indigo-100">
-          <Users size={16} />
-          ยอดรวมทีมผู้เกี่ยวข้อง (Stakeholders) ทั้งหมด: <span className="text-lg bg-white px-2 rounded-md shadow-sm ml-1 text-indigo-800">{totalStakeholders.toLocaleString()}</span> บทบาท
-        </div>
-      </div>
-
+      {/* 🚀 ส่งข้อมูลไปที่กราฟ โดยใช้ projectTypeData แทน sourceData */}
       <DashboardCharts 
-        lineData={lineChartData} pieData={pieChartData} barData={barChartData}
-        sourceData={sourceChartData} interestData={interestData} stakeholderData={stakeholderData}
+        lineData={lineChartData} 
+        pieData={pieChartData} 
+        barData={barChartData}
+        projectTypeData={projectTypeChartData} 
+        interestData={interestData} 
+        stakeholderData={stakeholderData}
       />
 
-     {/* 🌟 แสดงตารางเดียวแบบกางเต็มจอ */}
       <div className="grid grid-cols-1 mb-8">
         <VipPipelineTable 
           projects={filteredProjects} 
           profilesMap={profileMap} 
           salesStats={individualStats} 
-          customerTypes={customerTypes || []} // 🌟 3. ส่ง Props ตรงนี้
+          customerTypes={customerTypes || []}
         />
       </div>
 
-      {/* --- ตารางสรุปการเช็คอินของเซลส์ --- */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mb-8">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -415,43 +401,39 @@ export default async function DashboardPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {checkInList.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-6 text-slate-500">ไม่มีข้อมูลการเช็คอินในช่วงเวลานี้</td></tr>
-              ) : (
-                checkInList.map((ci, idx) => (
-                  <tr key={ci.userId || idx} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 font-semibold text-slate-800 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shadow-sm">
-                        {ci.name !== 'ไม่ระบุ/ไม่มีเซลส์' && ci.name !== 'พนักงานที่ถูกลบ' ? ci.name.charAt(0) : '?'}
-                      </div>
-                      {ci.name}
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
-                        <Smartphone size={14} /> {ci.appCount.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <span className="inline-flex items-center gap-1.5 font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                        <FileText size={14} /> {ci.csvCount.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      <span className="truncate max-w-[250px] inline-block align-bottom" title={ci.sampleLocation}>
-                        {ci.sampleLocation}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <Link 
-                        href={`/dashboard/checkins/${ci.userId}`} 
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"
-                      >
-                        ดูประวัติ <ChevronRight size={14} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
+              {checkInList.map((ci, idx) => (
+                <tr key={ci.userId || idx} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3 font-semibold text-slate-800 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shadow-sm">
+                      {ci.name !== 'ไม่ระบุ/ไม่มีเซลส์' && ci.name !== 'พนักงานที่ถูกลบ' ? ci.name.charAt(0) : '?'}
+                    </div>
+                    {ci.name}
+                  </td>
+                  <td className="px-5 py-3 text-center">
+                    <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+                      <Smartphone size={14} /> {ci.appCount.toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-center">
+                    <span className="inline-flex items-center gap-1.5 font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                      <FileText size={14} /> {ci.csvCount.toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-slate-600">
+                    <span className="truncate max-w-[250px] inline-block align-bottom" title={ci.sampleLocation}>
+                      {ci.sampleLocation}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-center">
+                    <Link 
+                      href={`/dashboard/checkins/${ci.userId}`} 
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"
+                    >
+                      ดูประวัติ <ChevronRight size={14} />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
