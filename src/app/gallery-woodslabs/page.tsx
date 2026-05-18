@@ -1,21 +1,63 @@
 // src/app/gallery-woodslabs/page.tsx
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   ImagePlus, UploadCloud, Copy, X, CheckCircle2, 
-  Loader2, ArrowLeft, Image as ImageIcon, Trash2, CheckSquare, Square, RefreshCcw, Layers
+  Loader2, ArrowLeft, Image as ImageIcon, Trash2, CheckSquare, Square, RefreshCcw, Layers, Crop
 } from 'lucide-react';
+import Cropper from 'react-easy-crop'; // ✅ นำเข้า Cropper
 
 const PAGE_SIZE = 40; 
-// ✅ แก้ไขโฟลเดอร์ปลายทางเป็น woodslabs
 const TARGET_FOLDER = 'woodslabs'; 
 
 interface GalleryImage {
   name: string;
   url: string;
   updatedAt: number;
+}
+
+// ✅ ฟังก์ชันช่วยเหลือสำหรับตัดภาพจาก Canvas
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.src = url;
+  });
+
+async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob | null> {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return null;
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Canvas is empty'));
+        return;
+      }
+      resolve(blob);
+    }, 'image/webp', 1);
+  });
 }
 
 export default function ImageGalleryWoodSlabsPage() {
@@ -31,11 +73,19 @@ export default function ImageGalleryWoodSlabsPage() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'preview' | 'compressing' | 'uploading'>('idle');
+  
+  // ✅ เพิ่มสถานะ 'crop' เข้ามาในระบบ
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'crop' | 'preview' | 'compressing' | 'uploading'>('idle');
   
   const [replaceFileName, setReplaceFileName] = useState<string | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
+
+  // ✅ State สำหรับระบบ Crop
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,8 +162,32 @@ export default function ImageGalleryWoodSlabsPage() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     setImageSrc(url);
-    setSelectedFile(file);
-    setUploadStatus('preview');
+    setOriginalFile(file);
+    setUploadStatus('crop'); // ✅ เข้าสู่โหมดตัดภาพก่อน
+  };
+
+  // ✅ ฟังก์ชันเก็บค่าตำแหน่งที่ตัด
+  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  // ✅ ฟังก์ชันยืนยันการตัดภาพ
+  const handleConfirmCrop = async () => {
+    try {
+      const croppedBlob = await getCroppedImg(imageSrc!, croppedAreaPixels);
+      if (croppedBlob) {
+        const croppedFile = new File([croppedBlob], originalFile?.name || 'cropped.webp', { type: 'image/webp' });
+        setSelectedFile(croppedFile);
+        
+        // อัปเดตพรีวิวให้เป็นรูปที่ตัดแล้ว
+        const croppedUrl = URL.createObjectURL(croppedBlob);
+        setImageSrc(croppedUrl);
+        setUploadStatus('preview');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาดในการตัดรูปภาพ');
+    }
   };
 
   const compressImage = async (file: File): Promise<Blob> => {
@@ -173,7 +247,6 @@ export default function ImageGalleryWoodSlabsPage() {
     try {
       setUploadStatus('compressing');
       const compressedBlob = await compressImage(selectedFile);
-      // ✅ ตั้งชื่อไฟล์ให้มีคำว่า WS นำหน้า จะได้รู้ว่าเป็น Wood Slabs
       const fileName = replaceFileName || `WS-${Date.now()}-${Math.floor(Math.random() * 1000)}.webp`;
 
       setUploadStatus('uploading');
@@ -206,7 +279,9 @@ export default function ImageGalleryWoodSlabsPage() {
     setUploadStatus('idle');
     setImageSrc(null);
     setSelectedFile(null);
+    setOriginalFile(null);
     setReplaceFileName(null); 
+    setZoom(1);
     if (imageSrc) URL.revokeObjectURL(imageSrc); 
   };
 
@@ -223,7 +298,6 @@ export default function ImageGalleryWoodSlabsPage() {
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 p-4 md:p-8 font-sans relative pb-24">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* ✅ ปรับเปลี่ยนธีมสีเป็นสีฟ้า (Blue) ให้เข้ากับ Wood Slabs */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-4">
             <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
@@ -235,7 +309,6 @@ export default function ImageGalleryWoodSlabsPage() {
             </div>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
-            {/* เปลี่ยนลิงก์กลับไปหน้า Inventory หรือหน้าจัดการของนาย */}
             <Link 
               href="/inventory" 
               className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors border border-slate-200"
@@ -412,6 +485,52 @@ export default function ImageGalleryWoodSlabsPage() {
                   <ImageIcon size={48} className="mx-auto text-slate-300 mb-3" />
                   <p className="font-medium text-slate-700">คลิก หรือ ลากไฟล์มาวางที่นี่</p>
                   <p className="text-xs text-slate-500 mt-1">ไฟล์จะถูกบันทึกในโฟลเดอร์ <span className="font-mono text-blue-500">{TARGET_FOLDER}</span></p>
+                </div>
+              )}
+
+              {/* ✅ โหมด Crop รูป */}
+              {uploadStatus === 'crop' && imageSrc && (
+                <div className="flex flex-col gap-4">
+                  <div className="relative w-full h-80 bg-slate-900 rounded-xl overflow-hidden">
+                    <Cropper
+                      image={imageSrc}
+                      crop={crop}
+                      zoom={zoom}
+                      aspect={1} // ✅ สัดส่วน 1:1 จัตุรัส
+                      onCropChange={setCrop}
+                      onCropComplete={onCropComplete}
+                      onZoomChange={setZoom}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-4 px-2">
+                    <span className="text-sm text-slate-600">ย่อ/ขยาย</span>
+                    <input
+                      type="range"
+                      value={zoom}
+                      min={1}
+                      max={3}
+                      step={0.1}
+                      aria-labelledby="Zoom"
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-2">
+                    <button 
+                      onClick={() => setUploadStatus('idle')}
+                      className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button 
+                      onClick={handleConfirmCrop}
+                      className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                    >
+                      <Crop size={16} /> ยืนยันการตัดภาพ
+                    </button>
+                  </div>
                 </div>
               )}
 
