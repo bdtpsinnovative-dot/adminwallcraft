@@ -36,7 +36,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
   const [editArea, setEditArea] = useState<string>('');
   const [isSavingArea, setIsSavingArea] = useState(false);
 
-  // 🌟 1. เพิ่ม State สำหรับแก้ไข "ชื่อลูกค้า"
+  // State สำหรับแก้ไข "ชื่อลูกค้า"
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editCustomerName, setEditCustomerName] = useState<string>('');
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
@@ -115,7 +115,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
     }
   };
 
-  // 🌟 2. เพิ่มฟังก์ชันบันทึกชื่อลูกค้า (อัปเดตเข้าตาราง orders)
   const handleSaveCustomer = async (orderId: string) => {
     if (!orderId) return;
     if (!editCustomerName.trim()) {
@@ -131,7 +130,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
       if (error) throw error;
       router.refresh();
-      setEditingCustomerId(null); // ปิดโหมดแก้ไข
+      setEditingCustomerId(null); 
     } catch (error) {
       console.error("Error updating customer name:", error);
       alert("เกิดข้อผิดพลาดในการบันทึกชื่อลูกค้าครับ");
@@ -267,21 +266,26 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
       <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         {viewMode === 'projects' ? (
-          <table className="w-full text-left text-sm table-fixed min-w-[1200px]">
+          // 🌟 ขยายขนาดตารางให้กว้างขึ้นรองรับคอลัมน์ใหม่
+          <table className="w-full text-left text-sm table-fixed min-w-[1400px]">
             <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">วันที่</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">เซลส์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ผู้ดูแล (ACCOUNT)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[20%]">โปรเจกต์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 text-right w-[12%]">พื้นที่ (ตร.ม.)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[13%]">ลูกค้า</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%] text-center">ช่องทาง</th>
+                {/* 🌟 ปรับสัดส่วน w-[%] ใหม่ทั้งหมดให้รวมได้ 100% */}
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">เซลส์</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ผู้ดูแล (ACCOUNT)</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">โปรเจกต์</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">ประเภทโครงการ</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">ประเภทสินค้า</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 text-right w-[10%]">พื้นที่ (ตร.ม.)</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ลูกค้า</th>
+                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[11%] text-center">ช่องทาง</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {displayProjects.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
+                // 🌟 อัปเดต colSpan เป็น 9 คอลัมน์
+                <tr><td colSpan={9} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
               ) : (
                 displayProjects.map((proj, idx) => {
                   const order = proj.order_items?.[0]?.orders || proj.order_items?.orders;
@@ -294,7 +298,20 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                   
                   const isEditingName = editingId === proj.id;
                   const isEditingArea = editingAreaId === proj.id;
-                  const isEditingCustomer = editingCustomerId === proj.id; // 🌟 3. เช็คว่ากำลังแก้ลูกค้าบรรทัดนี้อยู่ไหม
+                  const isEditingCustomer = editingCustomerId === proj.id; 
+
+                  // 🌟 ดึงข้อมูล ประเภทโครงการ (จาก order_item_projects)
+                  const projectTypeName = proj.project_types?.name || '-';
+
+                  // 🌟 ดึงข้อมูล ประเภทสินค้า (จาก order_items)
+                  let productCategoryName = '-';
+                  if (proj.order_items) {
+                    if (Array.isArray(proj.order_items)) {
+                      productCategoryName = proj.order_items[0]?.product_categories?.name || '-';
+                    } else {
+                      productCategoryName = proj.order_items.product_categories?.name || '-';
+                    }
+                  }
 
                   return (
                     <tr key={proj.id || idx} className="hover:bg-slate-50/80 transition-colors">
@@ -380,6 +397,16 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         </div>
                       </td>
 
+                      {/* 🌟 แสดงข้อมูล ประเภทโครงการ */}
+                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
+                        {projectTypeName}
+                      </td>
+
+                      {/* 🌟 แสดงข้อมูล ประเภทสินค้า */}
+                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
+                        {productCategoryName}
+                      </td>
+
                       <td className="px-5 py-4 align-middle text-right">
                         {isEditingArea ? (
                           <div className="flex items-center justify-end gap-1 w-full">
@@ -427,7 +454,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         )}
                       </td>
 
-                      {/* 🌟 4. ระบบแก้ไขชื่อลูกค้าแบบ Inline */}
                       <td className="px-5 py-4 text-slate-600 font-medium whitespace-normal break-words">
                         {isEditingCustomer ? (
                           <div className="flex items-center gap-1 w-full max-w-full">
@@ -439,7 +465,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                               autoFocus
                               disabled={isSavingCustomer}
                               onKeyDown={(e) => {
-                                // ส่ง order.id ไปให้ฟังก์ชันอัปเดต 
                                 if (e.key === 'Enter') handleSaveCustomer(order?.id);
                                 if (e.key === 'Escape') setEditingCustomerId(null);
                               }}
@@ -465,7 +490,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 group w-full cursor-pointer" onClick={() => {
-                            if(order?.id) { // กันเหนียว เช็คว่ามี Order ID ไหมถึงจะให้แก้
+                            if(order?.id) { 
                               setEditingCustomerId(proj.id);
                               setEditCustomerName(order?.customer_name || '');
                             }

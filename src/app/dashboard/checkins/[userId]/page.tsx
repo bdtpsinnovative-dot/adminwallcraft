@@ -1,9 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, Tag } from 'lucide-react'; // 🌟 เพิ่ม Tag
 import ImageGallery from '@/components/ImageGallery';
 import UserCheckInFilter from '@/components/UserCheckInFilter';
 import ExpandableNote from '@/components/ExpandableNote';
+import EditCheckInModal from '@/components/EditCheckInModal';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,6 @@ export default async function UserCheckInHistoryPage({
   searchParams 
 }: { 
   params: { userId: string },
-  // 🌟 เพิ่ม Parameter ให้รับค่า area และ role ได้
   searchParams: { start?: string; end?: string; source?: string; minArea?: string; maxArea?: string; role?: string; } 
 }) {
   const resolvedParams = await Promise.resolve(params);
@@ -25,11 +25,11 @@ export default async function UserCheckInHistoryPage({
   if (resolvedSearchParams?.end) endIso = new Date(`${resolvedSearchParams.end}T23:59:59.999+07:00`).toISOString();
   
   const filterSource = resolvedSearchParams?.source || 'APP';
-  // 🌟 ดึงค่าพื้นที่และ Role
   const minAreaFilter = resolvedSearchParams?.minArea ? Number(resolvedSearchParams.minArea) : null;
   const maxAreaFilter = resolvedSearchParams?.maxArea ? Number(resolvedSearchParams.maxArea) : null;
   const roleFilter = resolvedSearchParams?.role || 'ALL';
 
+  // 1. ดึงข้อมูลพนักงาน
   const { data: profile } = await supabase
     .from('profiles')
     .select('full_name')
@@ -38,14 +38,25 @@ export default async function UserCheckInHistoryPage({
 
   const userName = profile?.full_name || 'ไม่ระบุชื่อพนักงาน';
 
+  // 2. ดึงข้อมูล Category ทั้งหมดเตรียมไว้ให้ Modal (และนำมาใช้แสดงผล)
+  const { data: categoriesData } = await supabase
+    .from('product_categories')
+    .select('id, name')
+    .order('name');
+  const categories = categoriesData || [];
+
+  // 3. ดึงข้อมูล Order และความสัมพันธ์
   let query = supabase
     .from('orders')
     .select(`
       id, created_at, audit_log,
       order_items (
+        id, 
+        product_category_id, 
         images, 
         note,
         order_item_projects (
+          id, 
           project_name, area_sqm, is_deleted,
           account_developer, contact_developer,
           account_architecture, contact_architecture,
@@ -66,6 +77,7 @@ export default async function UserCheckInHistoryPage({
     console.error("Fetch History Error:", error.message);
   }
 
+  // 4. Transform ข้อมูล
   const checkIns = historyData?.flatMap(order => {
     const auditLog = order.audit_log as any;
     const isCsv = !auditLog;
@@ -77,12 +89,10 @@ export default async function UserCheckInHistoryPage({
       return (item.order_item_projects || [])
         .filter((proj: any) => proj.is_deleted !== true)
         .filter((proj: any) => {
-          // 🌟 1. กรองตามพื้นที่ (Area)
           const projArea = Number(proj.area_sqm) || 0;
           if (minAreaFilter !== null && projArea < minAreaFilter) return false;
           if (maxAreaFilter !== null && projArea > maxAreaFilter) return false;
 
-          // 🌟 2. กรองตาม Role ของผู้เกี่ยวข้อง (Stakeholders)
           if (roleFilter !== 'ALL') {
             const hasDev = !!proj.account_developer || !!proj.contact_developer;
             const hasArch = !!proj.account_architecture || !!proj.contact_architecture;
@@ -95,27 +105,33 @@ export default async function UserCheckInHistoryPage({
             if (roleFilter === 'contractor' && !hasCont) return false;
           }
 
-          return true; // ถ้าผ่านทุกด่าน ให้ปล่อยผ่าน
+          return true; 
         })
         .map((proj: any) => {
-          
           let imagesArray: string[] = [];
           if (Array.isArray(item.images)) {
             imagesArray = item.images;
           }
 
+          // 🌟 แมตช์หาชื่อ Category จาก ID
+          const matchedCategory = categories.find(c => c.id === item.product_category_id);
+          const categoryName = matchedCategory ? matchedCategory.name : 'ไม่ระบุหมวดหมู่';
+
           const dateUTC = new Date(order.created_at);
-          const thaiTime = new Date(dateUTC.getTime() + (7 * 60 * 60 * 1000));
-          const dateStr = thaiTime.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
-          const timeStr = thaiTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+          const dateStr = dateUTC.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: 'numeric' });
+          const timeStr = dateUTC.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
 
           return {
-            id: proj.project_name + order.id,
+            id: proj.id || `${proj.project_name}-${order.id}`,
+            orderItemId: item.id,
+            projectId: proj.id,
+            categoryId: item.product_category_id,
+            categoryName: categoryName, // 🌟 ส่งชื่อ Category ออกไปใช้ใน UI
             projectName: proj.project_name || 'ไม่ระบุชื่อโปรเจกต์',
             area: proj.area_sqm,
             date: dateStr,
             time: timeStr,
-            timestamp: thaiTime.getTime(),
+            timestamp: dateUTC.getTime(),
             images: imagesArray,
             isCsv: isCsv,
             lat: auditLog?.location?.lat,
@@ -200,7 +216,7 @@ export default async function UserCheckInHistoryPage({
                                         ci.contractorAcc || ci.contractorContact;
 
                 return (
-                  <div key={index} className="relative pl-10 md:pl-14">
+                  <div key={ci.id} className="relative pl-10 md:pl-14">
                     <div className={`absolute -left-[19px] top-4 w-9 h-9 rounded-full border-[4px] border-white shadow-md flex items-center justify-center text-white text-[12px] font-black z-10 ${ci.isCsv ? 'bg-slate-400' : 'bg-indigo-600'}`}>
                       {index + 1}
                     </div>
@@ -209,12 +225,26 @@ export default async function UserCheckInHistoryPage({
                       
                       {/* 1. ข้อมูลฝั่งซ้าย */}
                       <div className="col-span-1 xl:col-span-4 flex flex-col justify-start">
-                        <div className="flex items-center flex-wrap gap-2 mb-3">
-                          <h3 className="text-xl font-bold text-slate-800 leading-tight">{ci.projectName}</h3>
-                          {ci.isCsv ? (
-                            <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded-md font-bold flex items-center gap-1"><FileText size={12}/> CSV</span>
-                          ) : (
-                            <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-1 rounded-md font-bold flex items-center gap-1"><Smartphone size={12}/> APP</span>
+                        
+                        <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <h3 className="text-xl font-bold text-slate-800 leading-tight">{ci.projectName}</h3>
+                            {ci.isCsv ? (
+                              <span className="bg-slate-200 text-slate-600 text-[10px] px-2 py-1 rounded-md font-bold flex items-center gap-1"><FileText size={12}/> CSV</span>
+                            ) : (
+                              <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-1 rounded-md font-bold flex items-center gap-1"><Smartphone size={12}/> APP</span>
+                            )}
+                          </div>
+                          
+                          {!ci.isCsv && (
+                            <EditCheckInModal 
+                              orderItemId={ci.orderItemId}
+                              projectId={ci.projectId}
+                              currentCategoryId={ci.categoryId}
+                              currentArea={ci.area}
+                              userId={userId}
+                              categories={categories}
+                            />
                           )}
                         </div>
                         
@@ -240,6 +270,11 @@ export default async function UserCheckInHistoryPage({
                           <div className="flex items-center gap-2.5 text-slate-700 font-medium">
                             <div className="bg-white p-1.5 rounded-md shadow-sm border border-slate-100"><Map size={18} className={ci.isCsv ? 'text-slate-400' : 'text-emerald-500'} /></div> 
                             พื้นที่: <span className="font-bold">{Number(ci.area).toLocaleString()}</span> ตร.ม.
+                          </div>
+                          {/* 🌟 เพิ่มส่วนแสดงหมวดหมู่สินค้า */}
+                          <div className="flex items-center gap-2.5 text-slate-700 font-medium">
+                            <div className="bg-white p-1.5 rounded-md shadow-sm border border-slate-100"><Tag size={18} className={ci.isCsv ? 'text-slate-400' : 'text-sky-500'} /></div> 
+                            หมวดหมู่สินค้า: <span className="font-bold text-sky-700">{ci.categoryName}</span>
                           </div>
                         </div>
 

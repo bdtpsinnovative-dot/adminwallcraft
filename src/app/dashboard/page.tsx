@@ -71,8 +71,10 @@ export default async function DashboardPage({
       .select(`
         id, project_name, area_sqm, created_at, is_important, project_type_id,
         account_developer, account_architecture, account_interior, account_contractor,
+        project_types (name), 
         order_items (
           id, interest_level, images, product_category_id,
+          product_categories (name), 
           orders (
             id, customer_name, phone, user_id, team_id, is_synced, audit_log, source
           )
