@@ -377,13 +377,17 @@ export default async function DashboardPage({
       />
 
       <div className="grid grid-cols-1 mb-8">
-        <VipPipelineTable 
-          projects={filteredProjects} 
-          profilesMap={profileMap} 
-          salesStats={individualStats} 
-          customerTypes={customerTypes || []}
-        />
-      </div>
+  <VipPipelineTable 
+    projects={filteredProjects} 
+    profilesMap={profileMap} 
+    salesStats={individualStats} 
+    customerTypes={customerTypes || []}
+
+    // 🌟 ต้องเพิ่ม 2 บรรทัดนี้เข้าไปด้วยครับ!
+    projectTypes={projectTypes || []} 
+    productCategories={productCategories || []} 
+  />
+</div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mb-8">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">

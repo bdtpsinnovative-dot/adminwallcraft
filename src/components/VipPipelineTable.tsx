@@ -6,17 +6,19 @@ import {
   Star, List, Map, ArrowDownWideNarrow, ArrowUpNarrowWide, 
   User, Target, Trophy, Maximize2, LayoutList, BarChart3, 
   CalendarDays, Smartphone, FileText,
-  Edit2, Check, X 
-} from 'lucide-react';
+  Edit2, Check, X, Loader2
+} from 'lucide-react'; // 🌟 เพิ่ม Loader2 เข้ามาเพื่อทำ Loading หมุนๆ
 
 interface Props {
   projects: any[];
   profilesMap: Record<string, string>;
   salesStats: any[];
   customerTypes: { id: string; name: string }[]; 
+  projectTypes: { id: string; name: string }[];
+  productCategories: { id: string; name: string }[];
 }
 
-export default function VipPipelineTable({ projects, profilesMap, salesStats, customerTypes = [] }: Props) {
+export default function VipPipelineTable({ projects, profilesMap, salesStats, customerTypes = [], projectTypes = [], productCategories = [] }: Props) {
   const router = useRouter();
   
   const [viewMode, setViewMode] = useState<'projects' | 'performance'>('projects');
@@ -36,10 +38,20 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
   const [editArea, setEditArea] = useState<string>('');
   const [isSavingArea, setIsSavingArea] = useState(false);
 
-  // State สำหรับแก้ไข "ชื่อลูกค้า"
+  // State แก้ไขชื่อลูกค้า
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editCustomerName, setEditCustomerName] = useState<string>('');
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+
+  // State แก้ไขประเภทโครงการ (Project Type)
+  const [editingProjectTypeId, setEditingProjectTypeId] = useState<string | null>(null);
+  const [editProjectType, setEditProjectType] = useState<string>('');
+  const [isSavingProjectType, setIsSavingProjectType] = useState(false);
+
+  // State แก้ไขหมวดหมู่สินค้า (Product Category)
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState<string>('');
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   const formatDate = (isoString?: string) => {
     if (!isoString) return '-';
@@ -55,105 +67,102 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
     try {
       setLoadingId(projId);
       const newVipStatus = !currentIsVip;
-
-      const { error } = await supabase
-        .from('order_item_projects')
-        .update({ is_important: newVipStatus })
-        .eq('id', projId);
-
+      const { error } = await supabase.from('order_item_projects').update({ is_important: newVipStatus }).eq('id', projId);
       if (error) throw error;
       router.refresh();
     } catch (error) {
       console.error("Error updating VIP status:", error);
       alert("เกิดข้อผิดพลาดในการอัปเดตดาวครับ");
-    } finally {
-      setLoadingId(null);
-    }
+    } finally { setLoadingId(null); }
   };
 
   const handleSaveName = async (projId: string) => {
-    if (!editName.trim()) {
-      alert("ชื่อโครงการไม่สามารถเป็นค่าว่างได้ครับ");
-      return;
-    }
+    if (!editName.trim()) { alert("ชื่อโครงการไม่สามารถเป็นค่าว่างได้ครับ"); return; }
     try {
       setIsSavingName(true);
-      const { error } = await supabase
-        .from('order_item_projects')
-        .update({ project_name: editName.trim() })
-        .eq('id', projId);
-
+      const { error } = await supabase.from('order_item_projects').update({ project_name: editName.trim() }).eq('id', projId);
       if (error) throw error;
       router.refresh();
       setEditingId(null); 
-    } catch (error) {
-      console.error("Error updating project name:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึกชื่อโครงการครับ");
-    } finally {
-      setIsSavingName(false);
-    }
+    } catch (error) { console.error("Error updating project name:", error); alert("เกิดข้อผิดพลาดในการบันทึกชื่อโครงการครับ");
+    } finally { setIsSavingName(false); }
   };
 
   const handleSaveArea = async (projId: string) => {
     try {
       setIsSavingArea(true);
       const newArea = Number(editArea) || 0; 
-      
-      const { error } = await supabase
-        .from('order_item_projects')
-        .update({ area_sqm: newArea })
-        .eq('id', projId);
-
+      const { error } = await supabase.from('order_item_projects').update({ area_sqm: newArea }).eq('id', projId);
       if (error) throw error;
       router.refresh();
       setEditingAreaId(null); 
-    } catch (error) {
-      console.error("Error updating project area:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึกพื้นที่ครับ");
-    } finally {
-      setIsSavingArea(false);
-    }
+    } catch (error) { console.error("Error updating project area:", error); alert("เกิดข้อผิดพลาดในการบันทึกพื้นที่ครับ");
+    } finally { setIsSavingArea(false); }
   };
 
   const handleSaveCustomer = async (orderId: string) => {
     if (!orderId) return;
-    if (!editCustomerName.trim()) {
-      alert("ชื่อลูกค้าไม่สามารถเป็นค่าว่างได้ครับ");
-      return;
-    }
+    if (!editCustomerName.trim()) { alert("ชื่อลูกค้าไม่สามารถเป็นค่าว่างได้ครับ"); return; }
     try {
       setIsSavingCustomer(true);
-      const { error } = await supabase
-        .from('orders')
-        .update({ customer_name: editCustomerName.trim() })
-        .eq('id', orderId);
-
+      const { error } = await supabase.from('orders').update({ customer_name: editCustomerName.trim() }).eq('id', orderId);
       if (error) throw error;
       router.refresh();
       setEditingCustomerId(null); 
+    } catch (error) { console.error("Error updating customer name:", error); alert("เกิดข้อผิดพลาดในการบันทึกชื่อลูกค้าครับ");
+    } finally { setIsSavingCustomer(false); }
+  };
+
+  // 🌟 ฟังก์ชันบันทึก ประเภทโครงการ (รับค่า value เข้ามาเซฟเลย)
+  const handleSaveProjectType = async (projId: string, newValue: string) => {
+    try {
+      setIsSavingProjectType(true);
+      const { error } = await supabase
+        .from('order_item_projects')
+        .update({ project_type_id: newValue || null })
+        .eq('id', projId);
+
+      if (error) throw error;
+      router.refresh();
     } catch (error) {
-      console.error("Error updating customer name:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึกชื่อลูกค้าครับ");
+      console.error("Error updating project type:", error);
+      alert("เกิดข้อผิดพลาดในการบันทึกประเภทโครงการครับ");
     } finally {
-      setIsSavingCustomer(false);
+      setIsSavingProjectType(false);
+      setEditingProjectTypeId(null); // ซ่อน Dropdown ทันทีเมื่อเซฟเสร็จ
+    }
+  };
+
+  // 🌟 ฟังก์ชันบันทึก หมวดหมู่สินค้า (รับค่า value เข้ามาเซฟเลย)
+  const handleSaveProductCategory = async (orderItemId: string, newValue: string) => {
+    if (!orderItemId) return;
+    try {
+      setIsSavingCategory(true);
+      const { error } = await supabase
+        .from('order_items')
+        .update({ product_category_id: newValue || null })
+        .eq('id', orderItemId);
+
+      if (error) throw error;
+      router.refresh();
+    } catch (error) {
+      console.error("Error updating product category:", error);
+      alert("เกิดข้อผิดพลาดในการบันทึกประเภทสินค้าครับ");
+    } finally {
+      setIsSavingCategory(false);
+      setEditingCategoryId(null); // ซ่อน Dropdown ทันทีเมื่อเซฟเสร็จ
     }
   };
 
   let displayProjects = projects.filter(proj => {
     const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
-
     const pName = proj.project_name ? proj.project_name.trim() : "";
-    const isNoName = !pName || 
-                     pName === "" || 
-                     pName === "-" || 
-                     pName.includes("ไม่มีการระบุโครงการ") ||
-                     pName.includes("ไม่ระบุ");
+    const isNoName = !pName || pName === "" || pName === "-" || pName.includes("ไม่มีการระบุโครงการ") || pName.includes("ไม่ระบุ");
 
     if (tab === 1) return isVip;       
     if (tab === 2) return true;        
     if (tab === 3) return !isNoName;   
     if (tab === 4) return isNoName;    
-    
     return true;
   });
 
@@ -187,11 +196,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
       const accountName = proj[key];
 
       if (accountName && typeof accountName === 'string' && accountName.trim()) {
-        return {
-          role: type.name, 
-          name: accountName.trim(),
-          color: getRoleColor(type.name)
-        };
+        return { role: type.name, name: accountName.trim(), color: getRoleColor(type.name) };
       }
     }
     return null;
@@ -233,21 +238,12 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
           {viewMode === 'projects' ? (
             <>
               <div className="flex flex-wrap gap-2">
-                <button 
-                  onClick={() => setTab(1)} 
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}
-                >
+                <button onClick={() => setTab(1)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>
                   <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว
                 </button>
-                <button onClick={() => setTab(2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>
-                  ทั้งหมด
-                </button>
-                <button onClick={() => setTab(3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>
-                  ทั้งหมด แบบมีโครงการ
-                </button>
-                <button onClick={() => setTab(4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>
-                  ทั้งหมด แบบไม่มีโครงการ
-                </button>
+                <button onClick={() => setTab(2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด</button>
+                <button onClick={() => setTab(3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด แบบมีโครงการ</button>
+                <button onClick={() => setTab(4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด แบบไม่มีโครงการ</button>
               </div>
 
               <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
@@ -266,11 +262,9 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
       <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         {viewMode === 'projects' ? (
-          // 🌟 ขยายขนาดตารางให้กว้างขึ้นรองรับคอลัมน์ใหม่
           <table className="w-full text-left text-sm table-fixed min-w-[1400px]">
             <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
               <tr>
-                {/* 🌟 ปรับสัดส่วน w-[%] ใหม่ทั้งหมดให้รวมได้ 100% */}
                 <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
                 <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">เซลส์</th>
                 <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ผู้ดูแล (ACCOUNT)</th>
@@ -284,11 +278,11 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
             </thead>
             <tbody className="divide-y divide-slate-100">
               {displayProjects.length === 0 ? (
-                // 🌟 อัปเดต colSpan เป็น 9 คอลัมน์
                 <tr><td colSpan={9} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
               ) : (
                 displayProjects.map((proj, idx) => {
-                  const order = proj.order_items?.[0]?.orders || proj.order_items?.orders;
+                  const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
+                  const order = item?.orders;
                   const activeAccount = getActiveAccount(proj);
                   const salesName = profilesMap[order?.user_id] || 'ไม่ระบุ';
                   
@@ -299,19 +293,12 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                   const isEditingName = editingId === proj.id;
                   const isEditingArea = editingAreaId === proj.id;
                   const isEditingCustomer = editingCustomerId === proj.id; 
+                  
+                  const isEditingProjectType = editingProjectTypeId === proj.id;
+                  const isEditingCategory = editingCategoryId === item?.id;
 
-                  // 🌟 ดึงข้อมูล ประเภทโครงการ (จาก order_item_projects)
                   const projectTypeName = proj.project_types?.name || '-';
-
-                  // 🌟 ดึงข้อมูล ประเภทสินค้า (จาก order_items)
-                  let productCategoryName = '-';
-                  if (proj.order_items) {
-                    if (Array.isArray(proj.order_items)) {
-                      productCategoryName = proj.order_items[0]?.product_categories?.name || '-';
-                    } else {
-                      productCategoryName = proj.order_items.product_categories?.name || '-';
-                    }
-                  }
+                  const productCategoryName = item?.product_categories?.name || '-';
 
                   return (
                     <tr key={proj.id || idx} className="hover:bg-slate-50/80 transition-colors">
@@ -346,10 +333,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                             className={`mt-0.5 shrink-0 transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-125'}`}
                             title={isVip ? "คลิกเพื่อเอาดาวออก" : "คลิกเพื่อติดดาวให้โปรเจกต์นี้"}
                           >
-                            <Star 
-                              size={18} 
-                              className={isVip ? "text-rose-500 fill-rose-500" : "text-slate-300 hover:text-rose-400 hover:fill-rose-100"} 
-                            />
+                            <Star size={18} className={isVip ? "text-rose-500 fill-rose-500" : "text-slate-300 hover:text-rose-400 hover:fill-rose-100"} />
                           </button>
                           
                           {isEditingName ? (
@@ -366,28 +350,13 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                                   if (e.key === 'Escape') setEditingId(null);
                                 }}
                               />
-                              <button 
-                                onClick={() => handleSaveName(proj.id)} 
-                                disabled={isSavingName}
-                                className="p-1.5 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors"
-                                title="บันทึก (Enter)"
-                              >
-                                <Check size={14} />
-                              </button>
-                              <button 
-                                onClick={() => setEditingId(null)} 
-                                disabled={isSavingName}
-                                className="p-1.5 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors"
-                                title="ยกเลิก (Esc)"
-                              >
-                                <X size={14} />
-                              </button>
+                              <div className="flex flex-col gap-0.5 shrink-0">
+                                <button onClick={() => handleSaveName(proj.id)} disabled={isSavingName} className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors" title="บันทึก (Enter)"><Check size={12} /></button>
+                                <button onClick={() => setEditingId(null)} disabled={isSavingName} className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors" title="ยกเลิก (Esc)"><X size={12} /></button>
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2 group w-full cursor-pointer" onClick={() => {
-                              setEditingId(proj.id);
-                              setEditName(proj.project_name || '');
-                            }}>
+                            <div className="flex items-center gap-2 group w-full cursor-pointer" onClick={() => { setEditingId(proj.id); setEditName(proj.project_name || ''); }}>
                               <span className="line-clamp-2 border-b border-dashed border-transparent group-hover:border-slate-400 transition-colors" title="คลิกเพื่อแก้ไขชื่อโครงการ">
                                 {proj.project_name || 'ไม่ได้ระบุชื่อ'}
                               </span>
@@ -397,14 +366,76 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         </div>
                       </td>
 
-                      {/* 🌟 แสดงข้อมูล ประเภทโครงการ */}
-                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
-                        {projectTypeName}
+                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทโครงการ (Auto-Save on Select) */}
+                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium relative">
+                        {isEditingProjectType ? (
+                          <div className="w-full relative">
+                            <select 
+                              autoFocus
+                              value={editProjectType} 
+                              onChange={(e) => {
+                                setEditProjectType(e.target.value);
+                                handleSaveProjectType(proj.id, e.target.value); // เซฟทันทีที่เลือก
+                              }}
+                              onBlur={() => setEditingProjectTypeId(null)} // ปิดถ้ายกเลิก/คลิกที่อื่น
+                              className="border border-indigo-400 rounded px-2 py-1.5 text-sm outline-none w-full focus:ring-2 focus:ring-indigo-200 bg-white shadow-sm appearance-none"
+                              disabled={isSavingProjectType}
+                            >
+                              <option value="">- เลือกระบุ -</option>
+                              {projectTypes.map(pt => (
+                                <option key={pt.id} value={pt.id}>{pt.name}</option>
+                              ))}
+                            </select>
+                            {isSavingProjectType && <Loader2 size={14} className="absolute right-2 top-2 text-indigo-500 animate-spin" />}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group cursor-pointer" onClick={() => {
+                            setEditingProjectTypeId(proj.id);
+                            setEditProjectType(proj.project_type_id || '');
+                          }}>
+                            <span className="line-clamp-2 border-b border-dashed border-transparent group-hover:border-slate-400 transition-colors" title="คลิกเพื่อแก้ไขประเภทโครงการ">
+                              {projectTypeName}
+                            </span>
+                            <Edit2 size={12} className="text-slate-300 group-hover:text-indigo-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />
+                          </div>
+                        )}
                       </td>
 
-                      {/* 🌟 แสดงข้อมูล ประเภทสินค้า */}
-                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
-                        {productCategoryName}
+                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทสินค้า (Auto-Save on Select) */}
+                      <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium relative">
+                        {isEditingCategory ? (
+                          <div className="w-full relative">
+                            <select 
+                              autoFocus
+                              value={editCategory} 
+                              onChange={(e) => {
+                                setEditCategory(e.target.value);
+                                handleSaveProductCategory(item?.id, e.target.value); // เซฟทันทีที่เลือก
+                              }}
+                              onBlur={() => setEditingCategoryId(null)} // ปิดถ้ายกเลิก/คลิกที่อื่น
+                              className="border border-sky-400 rounded px-2 py-1.5 text-sm outline-none w-full focus:ring-2 focus:ring-sky-200 bg-white shadow-sm appearance-none"
+                              disabled={isSavingCategory}
+                            >
+                              <option value="">- เลือกระบุ -</option>
+                              {productCategories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                              ))}
+                            </select>
+                            {isSavingCategory && <Loader2 size={14} className="absolute right-2 top-2 text-sky-500 animate-spin" />}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group cursor-pointer" onClick={() => {
+                            if (item?.id) {
+                              setEditingCategoryId(item.id);
+                              setEditCategory(item.product_category_id || '');
+                            }
+                          }}>
+                            <span className="line-clamp-2 border-b border-dashed border-transparent group-hover:border-slate-400 transition-colors" title="คลิกเพื่อแก้ไขหมวดหมู่สินค้า">
+                              {productCategoryName}
+                            </span>
+                            {item?.id && <Edit2 size={12} className="text-slate-300 group-hover:text-sky-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />}
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-5 py-4 align-middle text-right">
@@ -423,29 +454,12 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                               }}
                             />
                             <div className="flex flex-col gap-0.5">
-                              <button 
-                                onClick={() => handleSaveArea(proj.id)} 
-                                disabled={isSavingArea}
-                                className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors"
-                                title="บันทึก (Enter)"
-                              >
-                                <Check size={12} />
-                              </button>
-                              <button 
-                                onClick={() => setEditingAreaId(null)} 
-                                disabled={isSavingArea}
-                                className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors"
-                                title="ยกเลิก (Esc)"
-                              >
-                                <X size={12} />
-                              </button>
+                              <button onClick={() => handleSaveArea(proj.id)} disabled={isSavingArea} className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors" title="บันทึก (Enter)"><Check size={12} /></button>
+                              <button onClick={() => setEditingAreaId(null)} disabled={isSavingArea} className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors" title="ยกเลิก (Esc)"><X size={12} /></button>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-2 group cursor-pointer" onClick={() => {
-                            setEditingAreaId(proj.id);
-                            setEditArea(proj.area_sqm?.toString() || '0');
-                          }}>
+                          <div className="flex items-center justify-end gap-2 group cursor-pointer" onClick={() => { setEditingAreaId(proj.id); setEditArea(proj.area_sqm?.toString() || '0'); }}>
                             <Edit2 size={12} className="text-slate-300 group-hover:text-emerald-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />
                             <span className="font-black text-emerald-600 text-base border-b border-dashed border-transparent group-hover:border-emerald-300 transition-colors" title="คลิกเพื่อแก้ไขพื้นที่">
                               {Number(proj.area_sqm).toLocaleString()}
@@ -470,22 +484,8 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                               }}
                             />
                             <div className="flex flex-col gap-0.5 shrink-0">
-                              <button 
-                                onClick={() => handleSaveCustomer(order?.id)} 
-                                disabled={isSavingCustomer}
-                                className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors"
-                                title="บันทึก (Enter)"
-                              >
-                                <Check size={12} />
-                              </button>
-                              <button 
-                                onClick={() => setEditingCustomerId(null)} 
-                                disabled={isSavingCustomer}
-                                className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors"
-                                title="ยกเลิก (Esc)"
-                              >
-                                <X size={12} />
-                              </button>
+                              <button onClick={() => handleSaveCustomer(order?.id)} disabled={isSavingCustomer} className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors" title="บันทึก (Enter)"><Check size={12} /></button>
+                              <button onClick={() => setEditingCustomerId(null)} disabled={isSavingCustomer} className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors" title="ยกเลิก (Esc)"><X size={12} /></button>
                             </div>
                           </div>
                         ) : (
@@ -498,9 +498,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                             <span className="line-clamp-2 border-b border-dashed border-transparent group-hover:border-slate-400 transition-colors" title="คลิกเพื่อแก้ไขชื่อลูกค้า">
                               {order?.customer_name || '-'}
                             </span>
-                            {order?.id && (
-                              <Edit2 size={12} className="text-slate-300 group-hover:text-sky-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />
-                            )}
+                            {order?.id && <Edit2 size={12} className="text-slate-300 group-hover:text-sky-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />}
                           </div>
                         )}
                       </td>
