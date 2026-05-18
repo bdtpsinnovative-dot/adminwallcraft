@@ -1,13 +1,16 @@
 // src/app/gallery-woodslabs/page.tsx
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
   ImagePlus, UploadCloud, Copy, X, CheckCircle2, 
-  Loader2, ArrowLeft, Image as ImageIcon, Trash2, CheckSquare, Square, RefreshCcw, Layers, Crop
+  Loader2, ArrowLeft, Image as ImageIcon, Trash2, CheckSquare, Square, RefreshCcw, Layers, Crop as CropIcon
 } from 'lucide-react';
-import Cropper from 'react-easy-crop'; // ✅ นำเข้า Cropper
+
+// ✅ นำเข้า react-image-crop
+import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 
 const PAGE_SIZE = 40; 
 const TARGET_FOLDER = 'woodslabs'; 
@@ -16,48 +19,6 @@ interface GalleryImage {
   name: string;
   url: string;
   updatedAt: number;
-}
-
-// ✅ ฟังก์ชันช่วยเหลือสำหรับตัดภาพจาก Canvas
-const createImage = (url: string): Promise<HTMLImageElement> =>
-  new Promise((resolve, reject) => {
-    const image = new window.Image();
-    image.addEventListener('load', () => resolve(image));
-    image.addEventListener('error', (error) => reject(error));
-    image.src = url;
-  });
-
-async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob | null> {
-  const image = await createImage(imageSrc);
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  if (!ctx) return null;
-
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-
-  ctx.drawImage(
-    image,
-    pixelCrop.x,
-    pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height,
-    0,
-    0,
-    pixelCrop.width,
-    pixelCrop.height
-  );
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Canvas is empty'));
-        return;
-      }
-      resolve(blob);
-    }, 'image/webp', 1);
-  });
 }
 
 export default function ImageGalleryWoodSlabsPage() {
@@ -74,7 +35,6 @@ export default function ImageGalleryWoodSlabsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   
-  // ✅ เพิ่มสถานะ 'crop' เข้ามาในระบบ
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'crop' | 'preview' | 'compressing' | 'uploading'>('idle');
   
   const [replaceFileName, setReplaceFileName] = useState<string | null>(null);
@@ -82,10 +42,9 @@ export default function ImageGalleryWoodSlabsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [originalFile, setOriginalFile] = useState<File | null>(null);
 
-  // ✅ State สำหรับระบบ Crop
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  // ✅ State สำหรับระบบดึง 4 มุม
+  const [crop, setCrop] = useState<Crop>();
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -163,31 +122,69 @@ export default function ImageGalleryWoodSlabsPage() {
     const url = URL.createObjectURL(file);
     setImageSrc(url);
     setOriginalFile(file);
-    setUploadStatus('crop'); // ✅ เข้าสู่โหมดตัดภาพก่อน
+    setUploadStatus('crop');
   };
 
-  // ✅ ฟังก์ชันเก็บค่าตำแหน่งที่ตัด
-  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
+  // ✅ ฟังก์ชันตั้งค่ากรอบตัดเริ่มต้นให้อยู่ตรงกลางและเป็นจัตุรัส
+  function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
 
-  // ✅ ฟังก์ชันยืนยันการตัดภาพ
+    const initialCrop = centerCrop(
+      makeAspectCrop(
+        { unit: '%', width: 90 }, // กางกล่องครอปเริ่มต้นที่ 90% ของความกว้างภาพ
+        1, // บังคับสัดส่วน 1:1
+        width,
+        height
+      ),
+      width,
+      height
+    );
+
+    setCrop(initialCrop);
+  }
+
+  // ✅ ฟังก์ชันยืนยันการตัดภาพจากกรอบที่ลากไว้
   const handleConfirmCrop = async () => {
-    try {
-      const croppedBlob = await getCroppedImg(imageSrc!, croppedAreaPixels);
-      if (croppedBlob) {
-        const croppedFile = new File([croppedBlob], originalFile?.name || 'cropped.webp', { type: 'image/webp' });
-        setSelectedFile(croppedFile);
-        
-        // อัปเดตพรีวิวให้เป็นรูปที่ตัดแล้ว
-        const croppedUrl = URL.createObjectURL(croppedBlob);
-        setImageSrc(croppedUrl);
-        setUploadStatus('preview');
+    if (!imgRef.current || !crop || !crop.width || !crop.height) return;
+
+    const canvas = document.createElement('canvas');
+    const image = imgRef.current;
+    
+    // คำนวณอัตราส่วนภาพจริงบนหน้าจอเทียบกับขนาดไฟล์ต้นฉบับ
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+
+    canvas.width = crop.width * scaleX;
+    canvas.height = crop.height * scaleY;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) return;
+
+    // วาดภาพใหม่ลง Canvas เฉพาะส่วนที่เลือก
+    ctx.drawImage(
+      image,
+      crop.x * scaleX,
+      crop.y * scaleY,
+      crop.width * scaleX,
+      crop.height * scaleY,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        alert('เกิดข้อผิดพลาดในการสร้างรูปภาพ');
+        return;
       }
-    } catch (e) {
-      console.error(e);
-      alert('เกิดข้อผิดพลาดในการตัดรูปภาพ');
-    }
+      const croppedFile = new File([blob], originalFile?.name || 'cropped.webp', { type: 'image/webp' });
+      setSelectedFile(croppedFile);
+      
+      const croppedUrl = URL.createObjectURL(blob);
+      setImageSrc(croppedUrl);
+      setUploadStatus('preview');
+    }, 'image/webp', 1);
   };
 
   const compressImage = async (file: File): Promise<Blob> => {
@@ -281,7 +278,7 @@ export default function ImageGalleryWoodSlabsPage() {
     setSelectedFile(null);
     setOriginalFile(null);
     setReplaceFileName(null); 
-    setZoom(1);
+    setCrop(undefined);
     if (imageSrc) URL.revokeObjectURL(imageSrc); 
   };
 
@@ -445,7 +442,7 @@ export default function ImageGalleryWoodSlabsPage() {
       {/* Modal Upload & Preview */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-opacity">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
             
             <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0 bg-slate-50">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -488,34 +485,28 @@ export default function ImageGalleryWoodSlabsPage() {
                 </div>
               )}
 
-              {/* ✅ โหมด Crop รูป */}
+              {/* ✅ โหมด Crop รูป (ดึง 4 มุม) */}
               {uploadStatus === 'crop' && imageSrc && (
                 <div className="flex flex-col gap-4">
-                  <div className="relative w-full h-80 bg-slate-900 rounded-xl overflow-hidden">
-                    <Cropper
-                      image={imageSrc}
-                      crop={crop}
-                      zoom={zoom}
-                      aspect={1} // ✅ สัดส่วน 1:1 จัตุรัส
-                      onCropChange={setCrop}
-                      onCropComplete={onCropComplete}
-                      onZoomChange={setZoom}
-                    />
+                  <div className="relative w-full max-h-[50vh] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                    <ReactCrop 
+                      crop={crop} 
+                      onChange={c => setCrop(c)} 
+                      aspect={1} // บังคับให้เป็นจัตุรัสเสมอเวลาดึงมุม
+                      className="max-h-[50vh]"
+                    >
+                      <img 
+                        ref={imgRef}
+                        src={imageSrc} 
+                        onLoad={onImageLoad}
+                        alt="Crop" 
+                        className="max-h-[50vh] w-auto object-contain"
+                      />
+                    </ReactCrop>
                   </div>
-                  
-                  <div className="flex items-center gap-4 px-2">
-                    <span className="text-sm text-slate-600">ย่อ/ขยาย</span>
-                    <input
-                      type="range"
-                      value={zoom}
-                      min={1}
-                      max={3}
-                      step={0.1}
-                      aria-labelledby="Zoom"
-                      onChange={(e) => setZoom(Number(e.target.value))}
-                      className="w-full accent-blue-600"
-                    />
-                  </div>
+                  <p className="text-sm text-center text-slate-500">
+                    💡 ลากที่มุมของกรอบสี่เหลี่ยมเพื่อขยาย/ย่อรูปภาพ
+                  </p>
 
                   <div className="flex justify-end gap-3 mt-2">
                     <button 
@@ -528,7 +519,7 @@ export default function ImageGalleryWoodSlabsPage() {
                       onClick={handleConfirmCrop}
                       className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
                     >
-                      <Crop size={16} /> ยืนยันการตัดภาพ
+                      <CropIcon size={16} /> ยืนยันการตัดภาพ
                     </button>
                   </div>
                 </div>
