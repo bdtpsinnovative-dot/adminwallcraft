@@ -41,7 +41,6 @@ export default async function DashboardPage({
   const profileMap: Record<string, string> = {};
   profiles?.forEach(p => { profileMap[p.id] = p.full_name; });
 
-  // 🟢 สร้าง Map สำหรับแปลง ID ประเภทโปรเจกต์เป็นชื่อภาษาไทย
   const projectTypeMap: Record<string, string> = {};
   projectTypes?.forEach(pt => { projectTypeMap[pt.id] = pt.name; });
 
@@ -148,8 +147,6 @@ export default async function DashboardPage({
   
   const salesPerformanceData: Record<string, { count: number, area: number, syncedCount: number, pendingCount: number }> = {};
   const dailyCountMap: Record<string, { date: string, count: number, timestamp: number }> = {};
-  
-  // 🟢 ตัวแปรสำหรับเก็บจำนวนแยกตามประเภทโครงการ
   const projectTypeCountMap: Record<string, number> = {};
 
   let intVeryHigh = 0, intHigh = 0, intMedium = 0, intFollow = 0, intLow = 0, intNull = 0; 
@@ -165,7 +162,6 @@ export default async function DashboardPage({
     
     if (proj.is_important) importantProjectsCount++;
 
-    // 🟢 นับยอดประเภทโครงการ (คอนโด, โรงแรม ฯลฯ)
     const pTypeId = proj.project_type_id;
     const typeName = pTypeId && projectTypeMap[pTypeId] ? projectTypeMap[pTypeId] : 'ไม่ระบุประเภท';
     if (!projectTypeCountMap[typeName]) projectTypeCountMap[typeName] = 0;
@@ -217,7 +213,6 @@ export default async function DashboardPage({
 
   const lineChartData = Object.values(dailyCountMap).sort((a, b) => a.timestamp - b.timestamp).slice(-14).map(i => ({ date: i.date, count: i.count }));
   
-  // 🟢 แปลง Map ข้อมูลประเภทโครงการ เป็น Array สำหรับวาด Pie Chart
   const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
   const projectTypeChartData = Object.entries(projectTypeCountMap)
     .map(([name, count]) => ({
@@ -266,17 +261,23 @@ export default async function DashboardPage({
     totalStakeholders: devCount + archCount + intCount + contCount
   };
 
-  const checkInStats: Record<string, { appCount: number, csvCount: number, locations: string[] }> = {};
+  // 🌟 เพิ่มการเก็บข้อมูล totalArea ในแต่ละพนักงานขาย
+  const checkInStats: Record<string, { appCount: number, csvCount: number, totalArea: number, locations: string[] }> = {};
 
   filteredProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = orderItem?.orders;
     const userId = order?.user_id || 'unknown';
     const auditLog = order?.audit_log;
+    const area = Number(proj.area_sqm) || 0;
 
     if (!checkInStats[userId]) {
-      checkInStats[userId] = { appCount: 0, csvCount: 0, locations: [] };
+      checkInStats[userId] = { appCount: 0, csvCount: 0, totalArea: 0, locations: [] };
     }
+
+    // 🌟 สะสมตารางเมตรของเซลส์แต่ละคน
+    checkInStats[userId].totalArea += area;
+
     if (auditLog) {
       checkInStats[userId].appCount += 1;
       if (proj.project_name) checkInStats[userId].locations.push(proj.project_name);
@@ -291,6 +292,7 @@ export default async function DashboardPage({
       name: profileMap[uId] || (uId === 'unknown' ? 'ไม่ระบุ/ไม่มีเซลส์' : 'พนักงานที่ถูกลบ'),
       appCount: stats.appCount,
       csvCount: stats.csvCount,
+      totalArea: stats.totalArea, // 🌟 ส่งข้อมูลตารางเมตรรวมออกไปใช้งาน
       total: stats.appCount + stats.csvCount,
       sampleLocation: stats.locations.length > 0 ? stats.locations[0] : '-',
     };
@@ -324,7 +326,7 @@ export default async function DashboardPage({
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">โปรเจกต์ทั้งหมด</p>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">PROJETCS ทั้งหมด</p>
               <h2 className="text-3xl font-extrabold text-slate-800">{activeProjectsCount.toLocaleString()}</h2>
             </div>
             <div className="bg-blue-100 p-2.5 rounded-lg text-blue-600"><ShoppingCart size={22} /></div>
@@ -366,7 +368,6 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* 🚀 ส่งข้อมูลไปที่กราฟ โดยใช้ projectTypeData แทน sourceData */}
       <DashboardCharts 
         lineData={lineChartData} 
         pieData={pieChartData} 
@@ -377,17 +378,15 @@ export default async function DashboardPage({
       />
 
       <div className="grid grid-cols-1 mb-8">
-  <VipPipelineTable 
-    projects={filteredProjects} 
-    profilesMap={profileMap} 
-    salesStats={individualStats} 
-    customerTypes={customerTypes || []}
-
-    // 🌟 ต้องเพิ่ม 2 บรรทัดนี้เข้าไปด้วยครับ!
-    projectTypes={projectTypes || []} 
-    productCategories={productCategories || []} 
-  />
-</div>
+        <VipPipelineTable 
+          projects={filteredProjects} 
+          profilesMap={profileMap} 
+          salesStats={individualStats} 
+          customerTypes={customerTypes || []}
+          projectTypes={projectTypes || []} 
+          productCategories={productCategories || []} 
+        />
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mb-8">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -395,14 +394,16 @@ export default async function DashboardPage({
             <MapPin size={18} className="text-slate-600" /> สถิติการลงพื้นที่สร้างโปรเจกต์ (Check-ins & Data Import)
           </h3>
         </div>
-        <div className="overflow-x-auto p-0">
+       <div className="overflow-x-auto p-0">
           <table className="w-full text-left whitespace-nowrap text-sm">
             <thead className="bg-slate-100 text-slate-500 text-xs uppercase font-bold tracking-wider">
               <tr>
                 <th className="px-5 py-3 border-b border-slate-200">รายชื่อพนักงานขาย</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">ลงพื้นที่ (App)</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">อัปโหลดไฟล์ (CSV)</th>
+                {/* สลับเอา สถานที่ มาไว้ก่อนพื้นที่รวม */}
                 <th className="px-5 py-3 border-b border-slate-200">ตัวอย่างสถานที่ล่าสุด</th>
+                <th className="px-5 py-3 border-b border-slate-200 text-right">พื้นที่รวม (ตร.ม.)</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">ดูข้อมูล</th>
               </tr>
             </thead>
@@ -425,10 +426,14 @@ export default async function DashboardPage({
                       <FileText size={14} /> {ci.csvCount.toLocaleString()}
                     </span>
                   </td>
+                  {/* สลับ td ให้ตรงกับ thead ด้านบน */}
                   <td className="px-5 py-3 text-slate-600">
                     <span className="truncate max-w-[250px] inline-block align-bottom" title={ci.sampleLocation}>
                       {ci.sampleLocation}
                     </span>
+                  </td>
+                  <td className="px-5 py-3 text-right font-black text-base text-slate-700">
+                    {ci.totalArea.toLocaleString()} <span className="text-xs font-bold text-slate-400 ml-0.5">ตร.ม.</span>
                   </td>
                   <td className="px-5 py-3 text-center">
                     <Link 

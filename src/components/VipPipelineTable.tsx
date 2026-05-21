@@ -263,19 +263,24 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
       <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         {viewMode === 'projects' ? (
           <table className="w-full text-left text-sm table-fixed min-w-[1400px]">
-            <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">เซลส์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ผู้ดูแล (ACCOUNT)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">โปรเจกต์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">ประเภทโครงการ</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">ประเภทสินค้า</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 text-right w-[10%]">พื้นที่ (ตร.ม.)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ลูกค้า</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[11%] text-center">ช่องทาง</th>
-              </tr>
-            </thead>
+           <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
+  <tr>
+    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
+    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">เซลส์</th>
+    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[14%]">ผู้ดูแล (ACCOUNT)</th>
+    
+    {/* 🌟 ให้ความกว้างแบบฟิกซ์เป๊ะๆ ใหญ่ที่สุด 28% */}
+    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[28%]">โปรเจกต์</th>
+    
+    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ประเภทโครงการ</th>
+    
+    {/* 🌟 บีบ 4 คอลัมน์ท้ายให้แคบลงและจัดให้อยู่ใกล้กัน */}
+    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[6%]">ประเภทสินค้า</th>
+    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-right w-[6%]">(ตร.ม.)</th>
+    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%]">ลูกค้า</th>
+    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-center w-[6%]">ช่องทาง</th>
+  </tr>
+</thead>
             <tbody className="divide-y divide-slate-100">
               {displayProjects.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
