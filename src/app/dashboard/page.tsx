@@ -64,11 +64,11 @@ export default async function DashboardPage({
   let startRow = 0;
   const step = 1000;
 
-  while (isFetching) {
+while (isFetching) {
     let query = supabase
       .from('order_item_projects')
       .select(`
-        id, project_name, area_sqm, created_at, is_important, project_type_id,
+        id, project_name, area_sqm, created_at, is_important, project_type_id, project_note,
         account_developer, account_architecture, account_interior, account_contractor,
         project_types (name), 
         order_items (

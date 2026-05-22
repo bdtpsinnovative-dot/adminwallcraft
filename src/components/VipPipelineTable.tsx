@@ -7,7 +7,7 @@ import {
   User, Target, Trophy, Maximize2, LayoutList, BarChart3, 
   CalendarDays, Smartphone, FileText,
   Edit2, Check, X, Loader2
-} from 'lucide-react'; // 🌟 เพิ่ม Loader2 เข้ามาเพื่อทำ Loading หมุนๆ
+} from 'lucide-react'; 
 
 interface Props {
   projects: any[];
@@ -25,8 +25,12 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
   const [tab, setTab] = useState(2);
   const [sortArea, setSortArea] = useState<'desc' | 'asc' | 'none'>('none');
   const [sortBySales, setSortBySales] = useState<'projects' | 'area'>('projects');
-  
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  
+  // 🌟 State แก้ไขหมายเหตุ (Comment)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<string>('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
   
   // State แก้ไขชื่อโครงการ
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -111,6 +115,26 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
       setEditingCustomerId(null); 
     } catch (error) { console.error("Error updating customer name:", error); alert("เกิดข้อผิดพลาดในการบันทึกชื่อลูกค้าครับ");
     } finally { setIsSavingCustomer(false); }
+  };
+
+  // 🌟 ฟังก์ชันบันทึก หมายเหตุ
+  const handleSaveNote = async (projId: string) => {
+    try {
+      setIsSavingNote(true);
+      const { error } = await supabase
+        .from('order_item_projects')
+        .update({ project_note: editNote.trim() })
+        .eq('id', projId);
+
+      if (error) throw error;
+      router.refresh();
+      setEditingNoteId(null); 
+    } catch (error) { 
+      console.error("Error updating note:", error); 
+      alert("เกิดข้อผิดพลาดในการบันทึกหมายเหตุครับ");
+    } finally { 
+      setIsSavingNote(false); 
+    }
   };
 
   // 🌟 ฟังก์ชันบันทึก ประเภทโครงการ (รับค่า value เข้ามาเซฟเลย)
@@ -262,28 +286,28 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
       <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         {viewMode === 'projects' ? (
-          <table className="w-full text-left text-sm table-fixed min-w-[1400px]">
+          // 🌟 ขยายความกว้างตารางเป็น 1600px เพื่อให้มีพื้นที่สำหรับคอลัมน์หมายเหตุ
+          <table className="w-full text-left text-sm table-fixed min-w-[1600px]">
            <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
-  <tr>
-    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
-    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">เซลส์</th>
-    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[14%]">ผู้ดูแล (ACCOUNT)</th>
-    
-    {/* 🌟 ให้ความกว้างแบบฟิกซ์เป๊ะๆ ใหญ่ที่สุด 28% */}
-    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[28%]">โปรเจกต์</th>
-    
-    <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">ประเภทโครงการ</th>
-    
-    {/* 🌟 บีบ 4 คอลัมน์ท้ายให้แคบลงและจัดให้อยู่ใกล้กัน */}
-    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[6%]">ประเภทสินค้า</th>
-    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-right w-[6%]">(ตร.ม.)</th>
-    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%]">ลูกค้า</th>
-    <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-center w-[6%]">ช่องทาง</th>
-  </tr>
-</thead>
+            <tr>
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">เซลส์</th>
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ผู้ดูแล (ACCOUNT)</th>
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[20%]">โปรเจกต์</th>
+              
+              {/* 🌟 คอลัมน์ใหม่: หมายเหตุ */}
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">คอมเมนต์</th>
+              
+              <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ประเภทโครงการ</th>
+              <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">ประเภทสินค้า</th>
+              <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-right w-[6%]">(ตร.ม.)</th>
+              <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%]">ลูกค้า</th>
+              <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-center w-[4%]">ช่องทาง</th>
+            </tr>
+          </thead>
             <tbody className="divide-y divide-slate-100">
               {displayProjects.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
+                <tr><td colSpan={10} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
               ) : (
                 displayProjects.map((proj, idx) => {
                   const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
@@ -296,6 +320,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                   const isLoading = loadingId === proj.id;
                   
                   const isEditingName = editingId === proj.id;
+                  const isEditingNote = editingNoteId === proj.id; // 🌟 เช็คสถานะการแก้ไขหมายเหตุ
                   const isEditingArea = editingAreaId === proj.id;
                   const isEditingCustomer = editingCustomerId === proj.id; 
                   
@@ -371,7 +396,39 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         </div>
                       </td>
 
-                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทโครงการ (Auto-Save on Select) */}
+                      {/* 🌟 เซลล์ข้อมูลใหม่: หมายเหตุ */}
+                      <td className="px-5 py-4 align-middle text-slate-600 text-sm">
+                        {isEditingNote ? (
+                          <div className="flex items-center gap-1 w-full max-w-full">
+                            <input 
+                              type="text"
+                              value={editNote}
+                              onChange={(e) => setEditNote(e.target.value)}
+                              className="border border-amber-300 rounded px-2 py-1 text-sm outline-none w-full focus:ring-2 focus:ring-amber-100 bg-amber-50"
+                              autoFocus
+                              disabled={isSavingNote}
+                              placeholder="พิมพ์หมายเหตุ..."
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveNote(proj.id);
+                                if (e.key === 'Escape') setEditingNoteId(null);
+                              }}
+                            />
+                            <div className="flex flex-col gap-0.5 shrink-0">
+                              <button onClick={() => handleSaveNote(proj.id)} disabled={isSavingNote} className="p-1 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors" title="บันทึก (Enter)"><Check size={12} /></button>
+                              <button onClick={() => setEditingNoteId(null)} disabled={isSavingNote} className="p-1 bg-rose-100 text-rose-700 rounded hover:bg-rose-200 transition-colors" title="ยกเลิก (Esc)"><X size={12} /></button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group w-full cursor-pointer" onClick={() => { setEditingNoteId(proj.id); setEditNote(proj.project_note || ''); }}>
+                            <span className="line-clamp-2 border-b border-dashed border-transparent group-hover:border-slate-400 transition-colors" title="คลิกเพื่อแก้ไขหมายเหตุ">
+                              {proj.project_note || <span className="text-slate-300 italic">แสดงความคิดเห็น</span>}
+                            </span>
+                            <Edit2 size={12} className="text-slate-300 group-hover:text-amber-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0" />
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทโครงการ */}
                       <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium relative">
                         {isEditingProjectType ? (
                           <div className="w-full relative">
@@ -406,7 +463,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         )}
                       </td>
 
-                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทสินค้า (Auto-Save on Select) */}
+                      {/* 🌟 แสดง/แก้ไข ข้อมูล ประเภทสินค้า */}
                       <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium relative">
                         {isEditingCategory ? (
                           <div className="w-full relative">
