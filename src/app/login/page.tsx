@@ -46,15 +46,16 @@ export default function LoginPage() {
 
     } catch (err: any) {
       setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
+      setIsLoading(false); // 🌟 ย้ายการปิด Loading มาไว้ใน catch
+    } 
+    // 🌟 เอา finally { setIsLoading(false) } ออก 
+    // เพราะถ้าล็อกอินผ่าน เราอยากให้มันโหลดค้างไว้จนกว่าจะเปลี่ยนหน้าเสร็จ ผู้ใช้จะได้ไม่เห็นจอกระพริบ
   };
 
   return (
     <main className="min-h-screen w-full flex items-center justify-center p-4 md:p-6 font-sans relative bg-[#0A0705] overflow-hidden">
       
-      {/* 🌟 CSS แอนิเมชัน: แสงออร่าหายใจ (นุ่มๆ ดูแพง) และการลอยตัวบางๆ */}
+      {/* 🌟 CSS แอนิเมชัน */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes breathing-glow {
           0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.4; }
@@ -72,7 +73,7 @@ export default function LoginPage() {
         }
       `}} />
 
-      {/* --- 🪵 Background: ไม้ระแนงสีเข้มสุดพรีเมียม --- */}
+      {/* --- 🪵 Background --- */}
       <div 
         className="absolute inset-0 z-0 opacity-40"
         style={{
@@ -82,21 +83,28 @@ export default function LoginPage() {
         }}
       ></div>
 
-      {/* ขอบมืดมนๆ (Vignette) ให้ตรงกลางเด่น */}
       <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,transparent_0%,#0A0705_100%)] opacity-90"></div>
 
-      {/* --- ✨ แสง Ambient สีแอมเบอร์/ทอง (ขยับแบบหายใจ) --- */}
+      {/* --- ✨ แสง Ambient --- */}
       <div className="absolute top-1/2 left-1/2 w-[500px] h-[500px] bg-[#D4A373]/30 rounded-full blur-[120px] animate-glow z-0 pointer-events-none"></div>
 
-      {/* --- 🔐 Form การ์ดล็อกอิน (Ultra-Modern Glassmorphism) --- */}
+      {/* --- 🔐 Form การ์ดล็อกอิน --- */}
       <div className="w-full max-w-[400px] relative z-10 animate-float">
         <div className="bg-[#1A120B]/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden">
           
-          {/* แสงพาดมุมขวาบนเล็กๆ */}
+          {/* 🌟 LOADING OVERLAY: บังหน้าจอตอนกำลังล็อกอินให้รู้ตัว 100% */}
+          {isLoading && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#1A120B]/80 backdrop-blur-md rounded-3xl transition-all duration-300">
+              <Loader2 className="animate-spin text-[#D4A373] mb-4" size={48} strokeWidth={1.5} />
+              <p className="text-[#D4A373] font-bold tracking-widest text-sm animate-pulse uppercase">Authenticating...</p>
+              <p className="text-white/40 text-[10px] mt-2">กำลังเชื่อมต่อกับระบบหลังบ้าน</p>
+            </div>
+          )}
+
           <div className="absolute -top-20 -right-20 w-40 h-40 bg-white/10 blur-[50px] rounded-full pointer-events-none"></div>
 
           {/* Header */}
-          <div className="text-center mb-10">
+          <div className="text-center mb-10 relative z-10">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/5 border border-white/10 shadow-inner mb-6">
               <Leaf className="text-[#D4A373]" size={28} strokeWidth={1.5} />
             </div>
@@ -109,13 +117,13 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 backdrop-blur-md">
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 backdrop-blur-md relative z-10">
               <ShieldCheck className="text-red-400 shrink-0" size={18} />
               <p className="text-red-300 text-xs font-medium">{error}</p>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-5 relative z-10">
             <div>
               <label className="block text-white/50 text-[10px] font-bold mb-2 uppercase tracking-widest ml-1">Email Address</label>
               <div className="relative group">
@@ -125,9 +133,10 @@ export default function LoginPage() {
                 <input
                   type="email"
                   required
+                  disabled={isLoading}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-black/40 border border-white/5 text-white rounded-2xl py-3.5 pl-11 pr-5 outline-none focus:bg-black/60 focus:border-[#D4A373]/50 focus:ring-4 focus:ring-[#D4A373]/10 transition-all text-sm font-medium placeholder:text-white/20"
+                  className="w-full bg-black/40 border border-white/5 text-white rounded-2xl py-3.5 pl-11 pr-5 outline-none focus:bg-black/60 focus:border-[#D4A373]/50 focus:ring-4 focus:ring-[#D4A373]/10 transition-all text-sm font-medium placeholder:text-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder="admin@wallcraft.com"
                 />
               </div>
@@ -142,9 +151,10 @@ export default function LoginPage() {
                 <input
                   type="password"
                   required
+                  disabled={isLoading}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/40 border border-white/5 text-white rounded-2xl py-3.5 pl-11 pr-5 outline-none focus:bg-black/60 focus:border-[#D4A373]/50 focus:ring-4 focus:ring-[#D4A373]/10 transition-all text-sm font-medium placeholder:text-white/20"
+                  className="w-full bg-black/40 border border-white/5 text-white rounded-2xl py-3.5 pl-11 pr-5 outline-none focus:bg-black/60 focus:border-[#D4A373]/50 focus:ring-4 focus:ring-[#D4A373]/10 transition-all text-sm font-medium placeholder:text-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder="••••••••••••"
                 />
               </div>
@@ -153,19 +163,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-white text-black hover:bg-[#D4A373] hover:text-white font-bold text-sm py-4 rounded-2xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-[0.98] shadow-lg disabled:opacity-50 mt-8 group"
+              className="w-full bg-white text-black hover:bg-[#D4A373] hover:text-white font-bold text-sm py-4 rounded-2xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-[0.98] shadow-lg disabled:opacity-0 mt-8 group relative overflow-hidden"
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} />
-                  Authenticating...
-                </>
-              ) : (
-                <>
-                  Sign In
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
+              Sign In
+              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </form>
 
