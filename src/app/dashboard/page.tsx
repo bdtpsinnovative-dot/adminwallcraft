@@ -9,6 +9,7 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import Link from 'next/link';
 import { ChevronRight, Smartphone, FileText } from 'lucide-react';
+import { cookies } from 'next/headers'; // 🌟 เพิ่มบรรทัดนี้
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,32 @@ export default async function DashboardPage({
 }) {
   const params = await Promise.resolve(searchParams);
 
-  // --- 1. ดึง Master Data ---
+// 🌟 1. ดึงข้อมูลผู้ใช้ปัจจุบัน (Current User) แบบ Server Component
+  const cookieStore = await cookies(); // 🌟 เติม await ตรงนี้ครับ
+  const token = cookieStore.get('admin_token')?.value;
+  let user = null;
+  if (token) {
+    const { data } = await supabase.auth.getUser(token);
+    user = data?.user;
+  }
+
+  let currentUserRole = 'user';
+  let currentUserTeamId = null;
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single();
+      
+    if (profile) {
+      currentUserRole = profile.role;
+      currentUserTeamId = profile.team_id;
+    }
+  }
+
+  // --- 2. ดึง Master Data ---
   const [
     { data: profiles },
     { data: projectTypes },
@@ -31,7 +57,7 @@ export default async function DashboardPage({
     { data: teams },
     { data: customerTypes }
   ] = await Promise.all([
-    supabase.from('profiles').select('id, full_name'),
+    supabase.from('profiles').select('id, full_name, team_id'), // ดึง team_id มาด้วย
     supabase.from('project_types').select('id, name'),
     supabase.from('product_categories').select('id, name'),
     supabase.from('teams').select('id, team_name').order('team_name'),
@@ -44,17 +70,19 @@ export default async function DashboardPage({
   const projectTypeMap: Record<string, string> = {};
   projectTypes?.forEach(pt => { projectTypeMap[pt.id] = pt.name; });
 
-  // --- 2. จัดการตัวแปร Filter ---
+  // --- 3. จัดการตัวแปร Filter ---
   let startIso = '';
   let endIso = '';
   if (params?.start) startIso = new Date(`${params.start}T00:00:00+07:00`).toISOString();
   if (params?.end) endIso = new Date(`${params.end}T23:59:59.999+07:00`).toISOString();
 
+  // 🌟 บังคับสิทธิ์ตรงนี้: ถ้าไม่ใช่ Admin บังคับ filterTeam เป็นทีมตัวเองทันที
+  const filterTeam = currentUserRole === 'admin' ? (params?.team || 'ALL') : currentUserTeamId;
+  
   const filterSales = params?.sales || 'ALL';
   const filterProjectType = params?.projectType || 'ALL';
   const filterProductCategory = params?.productCategory || 'ALL';
   const filterSource = params?.source || 'ALL';
-  const filterTeam = params?.team || 'ALL';
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
@@ -64,7 +92,7 @@ export default async function DashboardPage({
   let startRow = 0;
   const step = 1000;
 
-while (isFetching) {
+  while (isFetching) {
     let query = supabase
       .from('order_item_projects')
       .select(`
@@ -261,7 +289,6 @@ while (isFetching) {
     totalStakeholders: devCount + archCount + intCount + contCount
   };
 
-  // 🌟 เพิ่มการเก็บข้อมูล totalArea ในแต่ละพนักงานขาย
   const checkInStats: Record<string, { appCount: number, csvCount: number, totalArea: number, locations: string[] }> = {};
 
   filteredProjects.forEach(proj => {
@@ -275,7 +302,6 @@ while (isFetching) {
       checkInStats[userId] = { appCount: 0, csvCount: 0, totalArea: 0, locations: [] };
     }
 
-    // 🌟 สะสมตารางเมตรของเซลส์แต่ละคน
     checkInStats[userId].totalArea += area;
 
     if (auditLog) {
@@ -292,11 +318,20 @@ while (isFetching) {
       name: profileMap[uId] || (uId === 'unknown' ? 'ไม่ระบุ/ไม่มีเซลส์' : 'พนักงานที่ถูกลบ'),
       appCount: stats.appCount,
       csvCount: stats.csvCount,
-      totalArea: stats.totalArea, // 🌟 ส่งข้อมูลตารางเมตรรวมออกไปใช้งาน
+      totalArea: stats.totalArea, 
       total: stats.appCount + stats.csvCount,
       sampleLocation: stats.locations.length > 0 ? stats.locations[0] : '-',
     };
   }).sort((a, b) => b.appCount - a.appCount);
+
+  // 🌟 กรองรายชื่อพนักงานและทีมใน Dropdown ให้เห็นตามสิทธิ์
+  const visibleTeams = currentUserRole === 'admin' 
+    ? (teams || []) 
+    : (teams || []).filter(t => t.id === currentUserTeamId);
+    
+  const visibleSales = currentUserRole === 'admin'
+    ? (profiles || [])
+    : (profiles || []).filter(p => p.team_id === currentUserTeamId);
 
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
@@ -314,10 +349,10 @@ while (isFetching) {
         
         <div className="w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0">
           <DashboardDateFilter
-            salesList={profiles || []}
+            salesList={visibleSales}
             projectTypes={projectTypes || []}
             productCategories={productCategories || []}
-            teams={teams || []}
+            teams={visibleTeams}
           />
         </div>
       </div>
@@ -401,7 +436,6 @@ while (isFetching) {
                 <th className="px-5 py-3 border-b border-slate-200">รายชื่อพนักงานขาย</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">ลงพื้นที่ (App)</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">อัปโหลดไฟล์ (CSV)</th>
-                {/* สลับเอา สถานที่ มาไว้ก่อนพื้นที่รวม */}
                 <th className="px-5 py-3 border-b border-slate-200">ตัวอย่างสถานที่ล่าสุด</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-right">พื้นที่รวม (ตร.ม.)</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">ดูข้อมูล</th>
@@ -426,7 +460,6 @@ while (isFetching) {
                       <FileText size={14} /> {ci.csvCount.toLocaleString()}
                     </span>
                   </td>
-                  {/* สลับ td ให้ตรงกับ thead ด้านบน */}
                   <td className="px-5 py-3 text-slate-600">
                     <span className="truncate max-w-[250px] inline-block align-bottom" title={ci.sampleLocation}>
                       {ci.sampleLocation}

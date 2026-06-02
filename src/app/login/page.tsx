@@ -33,14 +33,16 @@ export default function LoginPage() {
         .eq('id', authData.user.id)
         .single();
 
-      if (profileError || profile?.role !== 'admin') {
+      // 🌟 แก้ไขตรงนี้: เอาเงื่อนไขที่บล็อก user ทั่วไปออก ปล่อยให้ผ่านไปเซฟ Cookie ได้เลย
+      if (profileError) {
         await supabase.auth.signOut();
-        throw new Error('ระบบสงวนสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Only)');
+        throw new Error('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์');
       }
 
       // เซฟ Token ลง Cookie
       document.cookie = `admin_token=${authData.session.access_token}; path=/; max-age=86400; SameSite=Lax; secure`;
 
+      // ส่งทุกคนไปที่หน้า Dashboard (เพราะเราเขียนดักสิทธิ์ God Mode / Team Mode ไว้ที่หน้า Dashboard แล้ว)
       router.push('/dashboard'); 
       router.refresh();
 
