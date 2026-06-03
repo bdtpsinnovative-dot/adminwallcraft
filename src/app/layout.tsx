@@ -3,7 +3,7 @@
 import './globals.css';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react'; // 🌟 เพิ่ม useEffect เข้ามาครับ
+import { useState, useEffect } from 'react';
 import {
   ShoppingBag, Menu, X, Users, Bot,
   LayoutDashboard, Building2, Package, FileUp,
@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null); // 🌟 สเตทรักษายศของผู้ใช้ (admin / user)
+  const [userRole, setUserRole] = useState<string | null>(null); // สเตทรักษายศของผู้ใช้ (admin / user)
   const pathname = usePathname();
   const router = useRouter();
 
@@ -45,19 +45,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // 🛡️ 1. เช็คว่าเป็นหน้า Public หรือไม่
   const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog');
 
-  // 🚷 🌟 ระบบป้องกันหลังบ้าน: ถ้าไม่ใช่ admin แต่อุตริพิมพ์ URL แอบเข้าหน้าอื่นที่ไม่ใช่ Dashboard -> ดีดกลับไป Dashboard ทันที!
+  // 🚷 🌟 ระบบป้องกันหลังบ้านเวอร์ชันอัปเดต:
+  // อนุญาตให้พนักงาน (role === 'user') เข้าได้เฉพาะหน้า /dashboard และ /dashboard/checkins/[userId] เท่านั้น
   useEffect(() => {
-    if (!isPublicPage && userRole === 'user' && pathname !== '/dashboard') {
-      router.push('/dashboard');
+    if (!isPublicPage && userRole === 'user') {
+      const isDashboardZone = pathname === '/dashboard' || pathname.startsWith('/dashboard/checkins/');
+      
+      if (!isDashboardZone) {
+        router.push('/dashboard');
+      }
     }
-  }, [userRole, pathname, isPublicPage]);
+  }, [userRole, pathname, isPublicPage, router]);
 
   // 📝 รายการเมนู
   const menuGroups = [
     {
       title: 'Overview & AI',
       items: [
-        { name: 'หน้าแรก (Dashboard)', path: '/dashboard', icon: LayoutDashboard, color: 'blue', adminOnly: false }, // 🌟 ให้ user เข้าได้
+        { name: 'หน้าแรก (Dashboard)', path: '/dashboard', icon: LayoutDashboard, color: 'blue', adminOnly: false }, // ให้ user เข้าได้
         { name: 'จัดการบริษัทคู่ค้า', path: '/companies', icon: Building2, color: 'blue', adminOnly: true },
       ]
     },
@@ -127,7 +132,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               <nav className="flex-1 overflow-y-auto py-6 px-5 flex flex-col gap-8 scrollbar-hide">
                 {menuGroups.map((group, gIdx) => {
-                  // 🌟 ซ่อนหัวข้อใหญ่ทั้งหมด ถ้าในกลุ่มนั้นไม่มีเมนูที่ user เข้าได้เลย
+                  // ซ่อนหัวข้อใหญ่ทั้งหมด ถ้าในกลุ่มนั้นไม่มีเมนูที่ user เข้าได้เลย
                   const hasVisibleItems = group.items.some(item => !item.adminOnly || userRole === 'admin');
                   if (!hasVisibleItems) return null;
 
@@ -137,7 +142,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         {group.title}
                       </div>
                       {group.items.map((menu) => {
-                        // 🌟 เจาะลึกรายเมนู: ถ้าเมนูนี้สำหรับ Admin เท่านั้น แต่คนที่ดูอยู่เป็น User -> ไม่ต้องวาดเมนูนี้ออกมา
+                        // เจาะลึกรายเมนู: ถ้าเมนูนี้สำหรับ Admin เท่านั้น แต่คนที่ดูอยู่เป็น User -> ไม่ต้องวาดเมนูนี้ออกมา
                         if (menu.adminOnly && userRole !== 'admin') return null;
 
                         const isActive = pathname === menu.path;
