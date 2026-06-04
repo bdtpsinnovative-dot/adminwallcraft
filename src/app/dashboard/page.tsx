@@ -112,15 +112,16 @@ export default async function DashboardPage({
       .range(startRow, startRow + step - 1);
 
     if (startIso || endIso) {
-        let dateFilter = '';
-        if (startIso && endIso) {
-            dateFilter = `and(created_at.gte.${startIso},created_at.lte.${endIso})`;
-        } else if (startIso) {
-            dateFilter = `created_at.gte.${startIso}`;
-        } else if (endIso) {
-            dateFilter = `created_at.lte.${endIso}`;
-        }
-        query = query.or(`${dateFilter},is_important.eq.true`); 
+      if (startIso && endIso) {
+        // กรองแบบช่วงเวลา
+        query = query.gte('created_at', startIso).lte('created_at', endIso);
+      } else if (startIso) {
+        // กรองตั้งแต่วันที่ระบุเป็นต้นไป
+        query = query.gte('created_at', startIso);
+      } else if (endIso) {
+        // กรองจนถึงวันที่ระบุ
+        query = query.lte('created_at', endIso);
+      }
     }
 
     if (minArea) query = query.gte('area_sqm', minArea);
