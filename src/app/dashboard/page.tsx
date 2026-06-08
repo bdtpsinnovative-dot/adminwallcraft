@@ -86,23 +86,24 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 3. ดึงข้อมูลโปรเจกต์ ---
+// --- 3. ดึงข้อมูลโปรเจกต์ (ย้าย Filter ไปให้ Database ทำงานแทน) ---
   let allActiveProjects: any[] = [];
   let isFetching = true;
   let startRow = 0;
   const step = 1000;
 
   while (isFetching) {
+    // 🌟 ใส่ !inner ตรง order_items และ orders เพื่อบังคับให้ค้นหาข้ามตารางได้
     let query = supabase
       .from('order_item_projects')
       .select(`
         id, project_name, area_sqm, created_at, is_important, project_type_id, project_note,
         account_developer, account_architecture, account_interior, account_contractor,
         project_types (name), 
-        order_items (
+        order_items!inner (
           id, interest_level, images, product_category_id,
           product_categories (name), 
-          orders (
+          orders!inner (
             id, customer_name, phone, user_id, team_id, is_synced, audit_log, source
           )
         )
@@ -111,58 +112,70 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .range(startRow, startRow + step - 1);
 
+    // 📍 1. กรองวันที่ (แก้บั๊กเรื่อง .or แล้ว)
     if (startIso || endIso) {
       if (startIso && endIso) {
-        // กรองแบบช่วงเวลา
         query = query.gte('created_at', startIso).lte('created_at', endIso);
       } else if (startIso) {
-        // กรองตั้งแต่วันที่ระบุเป็นต้นไป
         query = query.gte('created_at', startIso);
       } else if (endIso) {
-        // กรองจนถึงวันที่ระบุ
         query = query.lte('created_at', endIso);
       }
     }
 
+    // 📍 2. กรองข้อมูลตารางหลัก (order_item_projects)
     if (minArea) query = query.gte('area_sqm', minArea);
     if (maxArea) query = query.lte('area_sqm', maxArea);
     if (filterProjectType !== 'ALL') query = query.eq('project_type_id', filterProjectType);
 
+    // 📍 3. กรองข้อมูลข้ามตาราง (อ้างอิงผ่าน relation path)
+    if (filterProductCategory !== 'ALL') {
+      query = query.eq('order_items.product_category_id', filterProductCategory);
+    }
+    
+    if (filterSales !== 'ALL') {
+      query = query.eq('order_items.orders.user_id', filterSales);
+    }
+    
+    if (filterTeam !== 'ALL') {
+      query = query.eq('order_items.orders.team_id', filterTeam);
+    }
+
+    // 📍 4. กรองที่มา (อิงจาก audit_log ว่าเป็น App หรือ CSV)
+    if (filterSource === 'APP') {
+      // ถ้าเป็น APP คือต้องมี audit_log
+      query = query.not('order_items.orders.audit_log', 'is', null);
+    } else if (filterSource === 'IMPORT') {
+      // ถ้าเป็น IMPORT คือ audit_log ว่าง
+      query = query.is('order_items.orders.audit_log', null);
+    }
+
+    // สั่งรัน Query
     const { data, error } = await query;
 
     if (error) {
       console.error("Dashboard Fetch Error:", error.message);
       break;
     }
+    
     if (data && data.length > 0) {
       allActiveProjects = [...allActiveProjects, ...data];
       startRow += step;
     }
+    
+    // ถ้าข้อมูลรอบนี้น้อยกว่า step แปลว่าหมดหน้าแล้ว
     if (!data || data.length < step) {
       isFetching = false;
     }
   }
 
-  // --- กรองข้อมูล ---
-  const filteredProjects = allActiveProjects.filter(proj => {
-    const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
-    const order = item?.orders;
-    
-    if (filterSales !== 'ALL' && order?.user_id !== filterSales) return false;
-    if (filterTeam !== 'ALL' && order?.team_id !== filterTeam) return false;
-    if (filterProductCategory !== 'ALL' && item?.product_category_id !== filterProductCategory) return false;
-
-    const isImported = order?.audit_log === null || order?.audit_log === undefined;
-    const data_source = isImported ? "IMPORT" : "APP";
-    if (filterSource !== 'ALL' && data_source !== filterSource) return false;
-    
-    return true;
-  });
-
-  // --- 4. ประมวลผล Data ---
-  const activeProjectsCount = filteredProjects.length;
+// ให้เอา allActiveProjects ไปใช้งานต่อได้เลย
+  const filteredProjects = allActiveProjects;
+  
+  // 🌟 เติมบรรทัดนี้ลงไปครับ! ขาดตัวนี้ตัวเดียวเลย
+  const activeProjectsCount = filteredProjects.length; 
+  
   const totalAreaSqm = filteredProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
-
   const nowUTC = new Date();
   const thaiTime = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
   const currentMonth = thaiTime.getUTCMonth();
