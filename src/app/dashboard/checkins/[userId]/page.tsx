@@ -1,11 +1,12 @@
-//src/app/dashboard/checkins/[userId]/page.tsx
+// src/app/dashboard/checkins/[userId]/page.tsx
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, User, Tag, ShoppingBag, Building2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, User, Building2 } from 'lucide-react';
 import ImageGallery from '@/components/ImageGallery';
 import UserCheckInFilter from '@/components/UserCheckInFilter';
 import ExpandableNote from '@/components/ExpandableNote';
 import EditCheckInModal from '@/components/EditCheckInModal';
+import ExportExcelButton from '@/components/ExportExcelButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,20 +26,15 @@ export default async function UserCheckInHistoryPage({
   if (resolvedSearchParams?.start) startIso = new Date(`${resolvedSearchParams.start}T00:00:00+07:00`).toISOString();
   if (resolvedSearchParams?.end) endIso = new Date(`${resolvedSearchParams.end}T23:59:59.999+07:00`).toISOString();
   
-  // 🌟 เปลี่ยนจาก 'APP' เป็น 'ALL' เพื่อให้มันดึงข้อมูลงานที่มาจาก CSV ด้วยแต่แรก
   const filterSource = resolvedSearchParams?.source || 'ALL'; 
   const minAreaFilter = resolvedSearchParams?.minArea ? Number(resolvedSearchParams.minArea) : null;
   const maxAreaFilter = resolvedSearchParams?.maxArea ? Number(resolvedSearchParams.maxArea) : null;
   const roleFilter = resolvedSearchParams?.role || 'ALL';
   
-  // 🌟 Next.js ถอดรหัส URL มาให้แล้ว รับค่าตรงๆ ได้เลยป้องกัน Error 
   const filterCompany = resolvedSearchParams?.company ? resolvedSearchParams.company.trim() : '';
-
-  // ฟังก์ชันละลายช่องว่าง เอาไว้จับเทียบชื่อบริษัทให้แม่นยำ 100%
   const normalizeText = (text: string) => text ? text.replace(/\s+/g, '').toLowerCase() : '';
   const targetCompanyStr = normalizeText(filterCompany);
 
-  // 1. ดึงข้อมูลพนักงาน
   let userName = 'ทีมเซลส์ทั้งหมด (All Sales)';
   if (userId !== 'all') {
     const { data: profile } = await supabase
@@ -49,25 +45,26 @@ export default async function UserCheckInHistoryPage({
     if (profile) userName = profile.full_name;
   }
 
-  // 2. ดึงข้อมูล Category เตรียมให้ Modal
   const { data: categoriesData } = await supabase
     .from('product_categories')
     .select('id, name')
     .order('name');
   const categories = categoriesData || [];
 
-  // 3. ดึงข้อมูล Order และความสัมพันธ์ 
+  // ✨ อัปเดต Query ดึงข้อมูลตาราง teams (team_name) มาด้วย
   let query = supabase
     .from('orders')
     .select(`
       id, created_at, audit_log, phone, customer_name, source, user_id,
       companies (name),
       profiles (full_name),
+      teams (team_name), 
       order_items (
         id, 
         product_category_id, 
         images, 
         note,
+        interest_level,
         order_item_projects (
           id, 
           project_name, area_sqm, is_deleted, project_note,
@@ -94,14 +91,12 @@ export default async function UserCheckInHistoryPage({
     console.error("Fetch History Error:", error.message);
   }
 
-  // 4. Transform จัดกลุ่มแยกข้อมูลเป็นกล่องออเดอร์
   const ordersList: any[] = [];
   let totalAppCount = 0;
   let totalCsvCount = 0;
   let totalProjectsCount = 0;
 
   historyData?.forEach(order => {
-    // 🌟 ดึงชื่อบริษัทออกมาให้ปลอดภัยจาก Type Error รองรับทั้งแบบ Array และ Object
     let dbCompanyName = '';
     if (Array.isArray(order.companies)) {
       dbCompanyName = order.companies[0]?.name || '';
@@ -109,7 +104,6 @@ export default async function UserCheckInHistoryPage({
       dbCompanyName = (order.companies as any).name || '';
     }
 
-    // 🌟 ดึงชื่อเซลส์ออกมาให้ปลอดภัยจาก Type Error รองรับทั้งแบบ Array และ Object
     let dbSalesName = '';
     if (Array.isArray(order.profiles)) {
       dbSalesName = order.profiles[0]?.full_name || '';
@@ -117,15 +111,21 @@ export default async function UserCheckInHistoryPage({
       dbSalesName = (order.profiles as any).full_name || '';
     }
 
-    // 🌟 กรองบริษัทโดยใช้ฟังก์ชันละลายช่องว่าง (ลบช่องว่างทิ้งก่อนเทียบ)
+    // ✨ ดึงชื่อทีมของ Order นี้มาเก็บไว้ส่งให้ Excel
+    let dbTeamName = '';
+    if (Array.isArray(order.teams)) {
+      dbTeamName = order.teams[0]?.team_name || '';
+    } else if (order.teams) {
+      dbTeamName = (order.teams as any).team_name || '';
+    }
+
     if (targetCompanyStr && normalizeText(dbCompanyName) !== targetCompanyStr) {
-      return; // ถ้าจับเทียบแบบไม่มีช่องว่างแล้วยังไม่ตรงกัน ค่อยเตะทิ้ง!
+      return; 
     }
 
     const auditLog = order.audit_log as any;
     const isCsv = !auditLog;
 
-    // ระบบกรองช่องทาง APP / CSV / ALL
     if (filterSource === 'APP' && isCsv) return;
     if (filterSource === 'CSV' && !isCsv) return;
     
@@ -172,6 +172,7 @@ export default async function UserCheckInHistoryPage({
             lat: auditLog?.location?.lat,
             lng: auditLog?.location?.lng,
             note: item.note || proj.project_note || '',
+            interestLevel: item.interest_level, 
             device: auditLog?.device?.brand ? `${auditLog.device.brand} ${auditLog.device.model}` : 'ไม่ระบุอุปกรณ์',
             stakeholders: {
               devAcc: proj.account_developer,
@@ -198,10 +199,12 @@ export default async function UserCheckInHistoryPage({
 
       ordersList.push({
         orderId: order.id,
-        salesName: dbSalesName || 'ไม่ระบุเซลส์', // ✨ ใช้ตัวแปรที่ดึงมาอย่างปลอดภัย
+        salesName: dbSalesName || 'ไม่ระบุเซลส์', 
+        teamName: dbTeamName || 'ไม่มีทีม', 
         customerName: order.customer_name || 'ไม่ระบุชื่อลูกค้า',
-        companyName: dbCompanyName || 'ลูกค้าทั่วไป (B2C)', // ✨ ใช้ตัวแปรที่ดึงมาอย่างปลอดภัย
+        companyName: dbCompanyName || 'ลูกค้าทั่วไป (B2C)', 
         phone: order.phone || '-',
+        source: order.source, // ✨ ตรวจสอบให้แน่ใจว่ามีบรรทัดนี้ส่งไปให้กราฟและปุ่ม Excel ด้วย
         isCsv: isCsv,
         date: dateStr,
         time: timeStr,
@@ -216,7 +219,6 @@ export default async function UserCheckInHistoryPage({
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
       
-      {/* ส่วนหัวกระดาษและสรุป */}
       <div className="mb-6 max-w-[1600px] w-[96%] mx-auto">
         <Link 
           href="/dashboard"
@@ -275,7 +277,12 @@ export default async function UserCheckInHistoryPage({
       </div>
 
       <div className="max-w-[1600px] w-[96%] mx-auto">
-        <UserCheckInFilter />
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex-1 w-full overflow-x-auto">
+            <UserCheckInFilter />
+          </div>
+          <ExportExcelButton ordersData={ordersList} />
+        </div>
 
         <div className="space-y-6 mt-6">
           {ordersList.length === 0 ? (
@@ -327,7 +334,6 @@ export default async function UserCheckInHistoryPage({
                     return (
                       <div key={proj.id} className={`grid grid-cols-1 xl:grid-cols-12 gap-8 ${pIdx > 0 ? 'pt-8 border-t border-slate-100' : ''}`}>
                         
-                        {/* ฝั่งซ้าย */}
                         <div className="col-span-1 xl:col-span-4 flex flex-col justify-start">
                           <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
                             <div className="flex items-start gap-2.5">
@@ -414,7 +420,6 @@ export default async function UserCheckInHistoryPage({
                           </div>
                         </div>
 
-                        {/* กลาง: แผนที่ */}
                         <div className="col-span-1 xl:col-span-5">
                           <div className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1.5">
                             <Map size={14} /> ตำแหน่งที่ตั้ง
@@ -440,7 +445,6 @@ export default async function UserCheckInHistoryPage({
                           )}
                         </div>
 
-                        {/* ขวา: รูปภาพ */}
                         <div className="col-span-1 xl:col-span-3 flex flex-col overflow-hidden">
                           <div className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1.5">
                             <ImageIcon size={14} /> รูปภาพหน้างาน ({proj.images.length})
