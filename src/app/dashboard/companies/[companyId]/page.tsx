@@ -1,4 +1,4 @@
-// src/app/dashboard/checkins/[companyId]/page.tsx
+// src/app/dashboard/companies/[companyId]/page.tsx
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, User, Building2, ShieldAlert } from 'lucide-react';
@@ -6,7 +6,8 @@ import ImageGallery from '@/components/ImageGallery';
 import UserCheckInFilter from '@/components/UserCheckInFilter';
 import ExpandableNote from '@/components/ExpandableNote';
 import EditCheckInModal from '@/components/EditCheckInModal';
-import { cookies } from 'next/headers'; // นำเข้าเพื่อใช้อ่าน Token
+import ExportExcelButton from '@/components/ExportExcelButton'; // ✨ นำเข้าปุ่มดาวน์โหลด
+import { cookies } from 'next/headers'; 
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +15,13 @@ export default async function CompanyCheckInHistoryPage({
   params, 
   searchParams 
 }: { 
-  params: { companyId: string }, // เปลี่ยนมารับ companyId จาก URL แทน
+  params: { companyId: string }, 
   searchParams: { start?: string; end?: string; source?: string; minArea?: string; maxArea?: string; role?: string; } 
 }) {
   const resolvedParams = await Promise.resolve(params);
-  const companyId = resolvedParams.companyId; // ไอดีบริษัทจาก URL
+  const companyId = resolvedParams.companyId; 
   const resolvedSearchParams = await Promise.resolve(searchParams);
 
-  // 🌟 1. ยืนยันตัวตนและดึงสิทธิ์ (Role & Team) ของคนที่ล็อกอินอยู่
   const cookieStore = await cookies();
   const token = cookieStore.get('admin_token')?.value;
   
@@ -44,7 +44,6 @@ export default async function CompanyCheckInHistoryPage({
     }
   }
 
-  // 🌟 2. ดึงชื่อบริษัทมาแสดงเป็นหัวข้อ (ดึงจาก companyId ตรงๆ)
   const { data: companyData } = await supabase
     .from('companies')
     .select('name')
@@ -53,7 +52,6 @@ export default async function CompanyCheckInHistoryPage({
     
   const companyName = companyData?.name || 'ไม่พบข้อมูลบริษัท';
 
-  // 3. จัดการพารามิเตอร์ Filter อื่นๆ
   let startIso = '';
   let endIso = '';
   if (resolvedSearchParams?.start) startIso = new Date(`${resolvedSearchParams.start}T00:00:00+07:00`).toISOString();
@@ -64,21 +62,21 @@ export default async function CompanyCheckInHistoryPage({
   const maxAreaFilter = resolvedSearchParams?.maxArea ? Number(resolvedSearchParams.maxArea) : null;
   const roleFilter = resolvedSearchParams?.role || 'ALL';
 
-  // 4. ดึงข้อมูล Category เตรียมให้ Modal
   const { data: categoriesData } = await supabase
     .from('product_categories')
     .select('id, name')
     .order('name');
   const categories = categoriesData || [];
 
-// 🌟 5. สร้าง Query ดึงออเดอร์ โดยอิงจาก company_id และ สิทธิ์การมองเห็น
+  // ✨ อัปเดต Query ให้ดึง teams (team_name) และ interest_level มาด้วย เพื่อส่งออก Excel ให้สมบูรณ์
   let query = supabase
     .from('orders')
     .select(`
       id, created_at, audit_log, phone, customer_name, source, user_id, team_id,
       profiles (full_name),
+      teams (team_name),
       order_items (
-        id, product_category_id, images, note,
+        id, product_category_id, images, note, interest_level,
         order_item_projects (
           id, project_name, area_sqm, is_deleted, project_note,
           account_developer, contact_developer,
@@ -90,11 +88,9 @@ export default async function CompanyCheckInHistoryPage({
       )
     `)
     .eq('company_id', companyId) 
-    // 🚨 สั่ง Supabase โดยตรงเลยว่า "ห้ามเอาออเดอร์ที่ audit_log เป็น null มาให้ฉัน!"
     .not('audit_log', 'is', null) 
     .order('created_at', { ascending: false });
 
-  // 🛡️ ระบบรักษาความปลอดภัย: ถ้าไม่ใช่ Admin บังคับดูได้แค่ของทีมตัวเอง
   if (currentUserRole !== 'admin') {
     query = query.eq('team_id', currentUserTeamId);
   }
@@ -108,13 +104,11 @@ export default async function CompanyCheckInHistoryPage({
     console.error("Fetch History Error:", error.message);
   }
 
-  // 6. Transform Data 
   const ordersList: any[] = [];
   let totalAppCount = 0;
   let totalCsvCount = 0;
   let totalProjectsCount = 0;
 
-  // โค้ดส่วน Transform สะอาดขึ้นมากเพราะไม่ต้องมานั่งเช็ค String บริษัทแล้ว
   historyData?.forEach(order => {
     const auditLog = order.audit_log as any;
     const isCsv = !auditLog;
@@ -127,6 +121,14 @@ export default async function CompanyCheckInHistoryPage({
       dbSalesName = order.profiles[0]?.full_name || '';
     } else if (order.profiles) {
       dbSalesName = (order.profiles as any).full_name || '';
+    }
+
+    // ✨ แกะชื่อทีมออกมา
+    let dbTeamName = '';
+    if (Array.isArray(order.teams)) {
+      dbTeamName = order.teams[0]?.team_name || '';
+    } else if (order.teams) {
+      dbTeamName = (order.teams as any).team_name || '';
     }
     
     const validProjects: any[] = [];
@@ -169,6 +171,7 @@ export default async function CompanyCheckInHistoryPage({
             lat: auditLog?.location?.lat,
             lng: auditLog?.location?.lng,
             note: item.note || proj.project_note || '',
+            interestLevel: item.interest_level, // ✨ เตรียมระดับความสนใจ
             device: auditLog?.device?.brand ? `${auditLog.device.brand} ${auditLog.device.model}` : 'ไม่ระบุอุปกรณ์',
             stakeholders: {
               devAcc: proj.account_developer, devCont: proj.contact_developer,
@@ -189,9 +192,11 @@ export default async function CompanyCheckInHistoryPage({
       ordersList.push({
         orderId: order.id,
         salesName: dbSalesName || 'ไม่ระบุเซลส์',
+        teamName: dbTeamName || 'ไม่มีทีม', // ✨ ส่งชื่อทีมเข้า Excel
         customerName: order.customer_name || 'ไม่ระบุชื่อลูกค้า',
-        companyName: companyName, // ใช้ชื่อบริษัทที่ query มาได้เลย
+        companyName: companyName, 
         phone: order.phone || '-',
+        source: order.source, // ✨ ส่งแหล่งที่มาเข้า Excel
         isCsv: isCsv,
         date: dateUTC.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: 'numeric' }),
         time: dateUTC.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) + ' น.',
@@ -210,7 +215,6 @@ export default async function CompanyCheckInHistoryPage({
           <ArrowLeft size={16} /> กลับไปหน้าภาพรวมหลัก
         </Link>
 
-        {/* 🛡️ แจ้งเตือนสถานะการมองเห็นตามสิทธิ์ */}
         {currentUserRole !== 'admin' && (
           <div className="mb-4 bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center gap-3 shadow-sm">
             <ShieldAlert size={18} className="text-amber-600" />
@@ -253,7 +257,13 @@ export default async function CompanyCheckInHistoryPage({
       </div>
 
       <div className="max-w-[1600px] w-[96%] mx-auto">
-        <UserCheckInFilter />
+        {/* ✨ จัด Layout ให้ตัวกรองกับปุ่มดาวน์โหลดอยู่บรรทัดเดียวกัน */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex-1 w-full overflow-x-auto">
+            <UserCheckInFilter />
+          </div>
+          <ExportExcelButton ordersData={ordersList} />
+        </div>
 
         <div className="space-y-6 mt-6">
           {ordersList.length === 0 ? (
@@ -322,7 +332,7 @@ export default async function CompanyCheckInHistoryPage({
                                 projectId={proj.projectId}
                                 currentCategoryId={proj.categoryId}
                                 currentArea={proj.area}
-                                userId={order.user_id} // แนบ user_id ของ order แทนเผื่อต้องเช็คสิทธิ์ในอนาคต
+                                userId={order.user_id} 
                                 categories={categories}
                               />
                             )}
