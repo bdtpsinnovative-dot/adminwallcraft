@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition, useMemo } from 'react'; // 🌟 1. เพิ่ม useTransition และ useMemo
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { 
   Star, List, Map, ArrowDownWideNarrow, ArrowUpNarrowWide, 
   User, Target, Trophy, Maximize2, LayoutList, BarChart3, 
   CalendarDays, Smartphone, FileText,
-  Edit2, Check, X, Loader2, Save
+  Edit2, Check, X, Loader2, Save, Scaling
 } from 'lucide-react'; 
 
 interface Props {
@@ -19,7 +19,7 @@ interface Props {
 }
 
 // ============================================================================
-// 🌟 1. แยก MODAL ออกมาเป็น COMPONENT เด็ดขาด (อัปเดต: เพิ่มหน้าจอ Loading สวยๆ)
+// 🌟 1. แยก MODAL ออกมาเป็น COMPONENT เด็ดขาด
 // ============================================================================
 function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategories, onRefresh }: any) {
   const [formData, setFormData] = useState({
@@ -49,7 +49,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
 
   const handleSave = async () => {
     try {
-      setIsSaving(true); // 🟢 เริ่มแสดงหน้าจอโหลด
+      setIsSaving(true); 
       
       const projectUpdate = supabase.from('order_item_projects').update({ 
         project_name: formData.projectName.trim() || null,
@@ -82,7 +82,6 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
       if (ordRes.error) throw ordRes.error;
       if (itemRes.error) throw itemRes.error;
 
-      // เพิ่มเวลาหน่วงนิดนึง (0.5 วินาที) ให้ UI ดูสมูทขึ้น ไม่กระชากหายไปทันที
       await new Promise(resolve => setTimeout(resolve, 500));
 
       onRefresh(); 
@@ -91,7 +90,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
       console.error(error); 
       alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลครับ");
     } finally { 
-      setIsSaving(false); // 🔴 ปิดหน้าจอโหลด
+      setIsSaving(false); 
     }
   };
 
@@ -99,9 +98,6 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200 relative">
         
-        {/* 🌟 ---------------------------------------------------------------- */}
-        {/* 🌟 OVERLAY หน้าจอโหลดดิ้ง (จะแสดงขึ้นมาทับเมื่อกดบันทึก) */}
-        {/* 🌟 ---------------------------------------------------------------- */}
         {isSaving && (
           <div className="absolute inset-0 z-50 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center">
             <Loader2 size={48} className="text-indigo-600 animate-spin mb-4" />
@@ -171,19 +167,29 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
 }
 
 // ============================================================================
-// 🌟 2. ตารางหลัก (คง UI เดิมไว้ 100%)
+// 🌟 2. ตารางหลัก
 // ============================================================================
 export default function VipPipelineTable({ projects, profilesMap, salesStats, customerTypes = [], projectTypes = [], productCategories = [] }: Props) {
   const router = useRouter();
   
+  // 🌟 2. เรียกใช้งาน useTransition เพื่อทำลื่นไหล
+  const [isPending, startTransition] = useTransition();
+
   const [viewMode, setViewMode] = useState<'projects' | 'performance'>('projects');
   const [tab, setTab] = useState(2);
   const [sortArea, setSortArea] = useState<'desc' | 'asc' | 'none'>('none');
   const [sortBySales, setSortBySales] = useState<'projects' | 'area'>('projects');
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  
-  // State สำหรับคุมการเปิดปิด Modal แก้งาน
   const [activeEditItem, setActiveEditItem] = useState<any>(null);
+
+  const [sizeFilter, setSizeFilter] = useState<'all' | 'M' | 'L' | 'XL'>('all');
+  
+  // 🌟 3. สร้าง Helper Function สำหรับเปลี่ยน Filter แบบมี Transition ครอบไว้
+  const handleFilterChange = (setter: any, value: any) => {
+    startTransition(() => {
+      setter(value);
+    });
+  };
 
   const formatDate = (isoString?: string) => {
     if (!isoString) return '-';
@@ -208,31 +214,46 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
     } finally { setLoadingId(null); }
   };
 
-  let displayProjects = projects.filter(proj => {
-    const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
-    const pName = proj.project_name ? proj.project_name.trim() : "";
-    const isNoName = !pName || pName === "" || pName === "-" || pName.includes("ไม่มีการระบุโครงการ") || pName.includes("ไม่ระบุ");
+  // 🌟 4. เอา useMemo มาคลุมการคำนวณ เพื่อให้มันจำค่าไว้ ไม่ต้องคำนวณใหม่ทุกครั้งที่ขยับเมาส์
+  const displayProjects = useMemo(() => {
+    let filtered = projects.filter(proj => {
+      const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
+      const pName = proj.project_name ? proj.project_name.trim() : "";
+      const isNoName = !pName || pName === "" || pName === "-" || pName.includes("ไม่มีการระบุโครงการ") || pName.includes("ไม่ระบุ");
 
-    if (tab === 1) return isVip;       
-    if (tab === 2) return true;        
-    if (tab === 3) return !isNoName;   
-    if (tab === 4) return isNoName;    
-    return true;
-  });
+      let passTab = true;
+      if (tab === 1) passTab = isVip;       
+      if (tab === 2) passTab = true;        
+      if (tab === 3) passTab = !isNoName;   
+      if (tab === 4) passTab = isNoName;    
 
-  displayProjects = [...displayProjects].sort((a, b) => {
-    const areaA = Number(a.area_sqm) || 0;
-    const areaB = Number(b.area_sqm) || 0;
-    if (sortArea === 'desc') return areaB - areaA;
-    if (sortArea === 'asc') return areaA - areaB;
-    return 0; 
-  });
+      if (!passTab) return false;
 
-  const sortedSalesStats = [...salesStats].sort((a, b) => {
-    if (sortBySales === 'projects') return b.projects - a.projects;
-    if (sortBySales === 'area') return b.area - a.area;
-    return 0;
-  });
+      const area = Number(proj.area_sqm) || 0;
+      
+      if (sizeFilter === 'M') return area >= 1 && area <= 50;
+      if (sizeFilter === 'L') return area >= 51 && area <= 100;
+      if (sizeFilter === 'XL') return area > 100;
+
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const areaA = Number(a.area_sqm) || 0;
+      const areaB = Number(b.area_sqm) || 0;
+      if (sortArea === 'desc') return areaB - areaA;
+      if (sortArea === 'asc') return areaA - areaB;
+      return 0; 
+    });
+  }, [projects, tab, sizeFilter, sortArea]); // สั่งให้คำนวณใหม่เฉพาะตอนที่เปลี่ยนเงื่อนไขพวกนี้
+
+  const sortedSalesStats = useMemo(() => {
+    return [...salesStats].sort((a, b) => {
+      if (sortBySales === 'projects') return b.projects - a.projects;
+      if (sortBySales === 'area') return b.area - a.area;
+      return 0;
+    });
+  }, [salesStats, sortBySales]);
 
   const getRoleColor = (roleName: string) => {
     const name = roleName.toLowerCase();
@@ -292,30 +313,44 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
           <div className="mt-8 flex flex-wrap justify-between items-center gap-4">
             {viewMode === 'projects' ? (
               <>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setTab(1)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>
-                    <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว
-                  </button>
-                  <button onClick={() => setTab(2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด</button>
-                  <button onClick={() => setTab(3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด แบบมีโครงการ</button>
-                  <button onClick={() => setTab(4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด แบบไม่มีโครงการ</button>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex flex-wrap gap-2">
+                    {/* 🌟 5. เปลี่ยน onClick ทุกปุ่มให้ผ่าน handleFilterChange ป้องกันหน้ากระตุก */}
+                    <button onClick={() => handleFilterChange(setTab, 1)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                      <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว
+                    </button>
+                    <button onClick={() => handleFilterChange(setTab, 2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>ทั้งหมด</button>
+                    <button onClick={() => handleFilterChange(setTab, 3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>ทั้งหมด แบบมีโครงการ</button>
+                    <button onClick={() => handleFilterChange(setTab, 4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-rose-50'}`}>ทั้งหมด แบบไม่มีโครงการ</button>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                    <span className="text-xs font-bold text-slate-400 flex items-center gap-1"><Scaling size={14}/> ขนาด:</span>
+                    <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-sm">
+                      <button onClick={() => handleFilterChange(setSizeFilter, 'all')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${sizeFilter === 'all' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>ทั้งหมด</button>
+                      <button onClick={() => handleFilterChange(setSizeFilter, 'M')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${sizeFilter === 'M' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-500 hover:text-sky-600'}`}>M (1-50)</button>
+                      <button onClick={() => handleFilterChange(setSizeFilter, 'L')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${sizeFilter === 'L' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-500 hover:text-indigo-600'}`}>L (51-100)</button>
+                      <button onClick={() => handleFilterChange(setSizeFilter, 'XL')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${sizeFilter === 'XL' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500 hover:text-violet-600'}`}>XL (100+)</button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                  <button onClick={() => setSortArea(sortArea === 'desc' ? 'none' : 'desc')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${sortArea === 'desc' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}><ArrowDownWideNarrow size={14} /> มากไปน้อย</button>
-                  <button onClick={() => setSortArea(sortArea === 'asc' ? 'none' : 'asc')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${sortArea === 'asc' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}><ArrowUpNarrowWide size={14} /> น้อยไปมาก</button>
+                  <button onClick={() => handleFilterChange(setSortArea, sortArea === 'desc' ? 'none' : 'desc')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${sortArea === 'desc' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'}`}><ArrowDownWideNarrow size={14} /> มากไปน้อย</button>
+                  <button onClick={() => handleFilterChange(setSortArea, sortArea === 'asc' ? 'none' : 'asc')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${sortArea === 'asc' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'}`}><ArrowUpNarrowWide size={14} /> น้อยไปมาก</button>
                 </div>
               </>
             ) : (
               <div className="flex gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                <button onClick={() => setSortBySales('projects')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sortBySales === 'projects' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}><Trophy size={14} /> จำนวนงานเยอะสุด</button>
-                <button onClick={() => setSortBySales('area')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sortBySales === 'area' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500'}`}><Maximize2 size={14} /> พื้นที่รวมเยอะสุด</button>
+                <button onClick={() => handleFilterChange(setSortBySales, 'projects')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sortBySales === 'projects' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Trophy size={14} /> จำนวนงานเยอะสุด</button>
+                <button onClick={() => handleFilterChange(setSortBySales, 'area')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${sortBySales === 'area' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Maximize2 size={14} /> พื้นที่รวมเยอะสุด</button>
               </div>
             )}
           </div>
         </div>
 
-        <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
+        {/* 🌟 6. ใส่เอฟเฟกต์เฟดตอนเปลี่ยนหน้า ถ้ากำลังโหลด (isPending) ตารางจะจางลงนิดนึง ดูพรีเมียมๆ */}
+        <div className={`overflow-x-auto overflow-y-auto max-h-[600px] transition-opacity duration-300 ${isPending ? 'opacity-30' : 'opacity-100'}`}>
           {viewMode === 'projects' ? (
             <table className="w-full text-left text-sm table-fixed min-w-[1600px]">
              <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
@@ -334,7 +369,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
             </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayProjects.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-slate-400">ไม่พบข้อมูลโครงการในหมวดนี้ครับ</td></tr>
+                  <tr><td colSpan={10} className="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลโครงการตามเงื่อนไขที่เลือกครับ</td></tr>
                 ) : (
                   displayProjects.map((proj, idx) => {
                     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
@@ -390,7 +425,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                           </div>
                         </td>
 
-                        {/* 🌟 จุดที่มีปุ่ม Edit เรียก Modal เปิดแก้ทุกช่อง */}
                         <td className="px-5 py-4 align-middle text-slate-600 text-sm">
                           <div className="flex items-start justify-between gap-2">
                             <span className={`line-clamp-2 ${proj.project_note ? 'text-slate-700' : 'text-slate-300 italic'}`}>
