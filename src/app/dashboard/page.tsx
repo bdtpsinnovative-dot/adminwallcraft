@@ -1,4 +1,4 @@
-//src/app/dashboard/page.tsx
+// src/app/dashboard/page.tsx
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
@@ -22,7 +22,6 @@ export default async function DashboardPage({
     start?: string; end?: string; range?: string;
     sales?: string; projectType?: string; productCategory?: string;
     minArea?: string; maxArea?: string; source?: string; team?: string;
-    company?: string; // 🌟 รับค่าชื่อบริษัทที่ส่งมาจากการคลิกบนแท่งกราฟ
   };
 }) {
   const params = await Promise.resolve(searchParams);
@@ -79,7 +78,7 @@ export default async function DashboardPage({
   if (params?.start) startIso = new Date(`${params.start}T00:00:00+07:00`).toISOString();
   if (params?.end) endIso = new Date(`${params.end}T23:59:59.999+07:00`).toISOString();
 
-  // 🌟 บังคับสิทธิ์ตรงนี้: ถ้าไม่ใช่ Admin บังคับ filterTeam เป็นทีมตัวเองทันที
+  // บังคับสิทธิ์ตรงนี้: ถ้าไม่ใช่ Admin บังคับ filterTeam เป็นทีมตัวเองทันที
   const filterTeam = currentUserRole === 'admin' ? (params?.team || 'ALL') : currentUserTeamId;
   
   const filterSales = params?.sales || 'ALL';
@@ -89,7 +88,7 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 3. ดึงข้อมูลโปรเจกต์ (ย้าย Filter ไปให้ Database ทำงานแทน) ---
+  // --- 4. ดึงข้อมูลโปรเจกต์ ---
   let allActiveProjects: any[] = [];
   let isFetching = true;
   let startRow = 0;
@@ -115,7 +114,6 @@ export default async function DashboardPage({
       .order('created_at', { ascending: false })
       .range(startRow, startRow + step - 1);
 
-    // 📍 1. กรองวันที่
     if (startIso || endIso) {
       if (startIso && endIso) {
         query = query.gte('created_at', startIso).lte('created_at', endIso);
@@ -126,12 +124,10 @@ export default async function DashboardPage({
       }
     }
 
-    // 📍 2. กรองข้อมูลตารางหลัก
     if (minArea) query = query.gte('area_sqm', minArea);
     if (maxArea) query = query.lte('area_sqm', maxArea);
     if (filterProjectType !== 'ALL') query = query.eq('project_type_id', filterProjectType);
 
-    // 📍 3. กรองข้อมูลข้ามตาราง
     if (filterProductCategory !== 'ALL') {
       query = query.eq('order_items.product_category_id', filterProductCategory);
     }
@@ -144,7 +140,6 @@ export default async function DashboardPage({
       query = query.eq('order_items.orders.team_id', filterTeam);
     }
 
-    // 📍 4. กรองที่มา
     if (filterSource === 'APP') {
       query = query.not('order_items.orders.audit_log', 'is', null);
     } else if (filterSource === 'IMPORT') {
@@ -168,41 +163,39 @@ export default async function DashboardPage({
     }
   }
 
-  // 🌟 คำนวณรวบรวมข้อมูลดิบของทุกบริษัทก่อนทำการ Filter หน้าจอหลัก (กราฟแท่งจะได้มีฐานข้อมูลบริษัทครบถ้วน)
-  const companyStats: Record<string, { name: string, count: number }> = {};
+// 🌟 5. รวบรวมข้อมูลดิบและเก็บ id (UUID) ของบริษัทส่งเข้าสู่กราฟแท่งเดี่ยวชัวร์ที่สุด
+  const companyStats: Record<string, { id: string, name: string, count: number }> = {};
   
   allActiveProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
-    const company = orderItem?.orders?.companies;
-    if (company && company.name) {
+    const order = orderItem?.orders;
+    const company = order?.companies;
+    
+    // 🚨 ขั้นสุดครับนาย! ถ้า audit_log เป็น null (พวกงาน CSV) สั่ง return เตะทิ้งทันที ไม่นับลงกราฟ
+    if (!order?.audit_log) return;
+
+    // ยอมรับโครงสร้างออบเจกต์ที่มีทั้ง ID และ Name ครบถ้วน
+    if (company && company.name && company.id) {
       const cName = company.name;
       if (!companyStats[cName]) {
-        companyStats[cName] = { name: cName, count: 0 };
+        companyStats[cName] = { id: company.id, name: cName, count: 0 };
       }
-      companyStats[cName].count += 1; // นับสถิติการเข้าพบซ้ำสะสมตรงๆ ตรงนี้เลยครับนาย
+      companyStats[cName].count += 1; 
     }
   });
 
-  // แปลงโครงสร้างข้อมูลส่งต่อไปยังกราฟคอมโพเนนต์
+  // แปลงโครงสร้างข้อมูลส่งต่อไปยังกราฟคอมโพเนนต์โดยแนบ id ติดไปด้วย
   const candlestickData = Object.values(companyStats)
     .map(comp => ({
+      id: comp.id,     // ✅ แนบ ID บริษัทส่งให้กราฟคลิกข้ามหน้า
       name: comp.name,
       count: comp.count
     }))
-    .sort((a, b) => b.count - a.count); // สั่งสลับเอาบริษัทที่เข้าพบซ้ำบ่อยสุดเรียงจากซ้ายมือสุด
+    .sort((a, b) => b.count - a.count);
 
-  // 🌟 ระบบคัดกรองข้อมูลหน้าจอหลัก เจาะลึกรายชื่อโปรเจกต์เมื่อคลิกแท่งกราฟบริษัท
-  let filteredProjects = allActiveProjects;
-  const filterCompany = params?.company || '';
-  if (filterCompany) {
-    filteredProjects = filteredProjects.filter(proj => {
-      const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
-      return orderItem?.orders?.companies?.name === filterCompany;
-    });
-  }
-
-  const activeProjectsCount = filteredProjects.length; 
-  const totalAreaSqm = filteredProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
+  // คำนวณยอดหน้าหลัก
+  const activeProjectsCount = allActiveProjects.length; 
+  const totalAreaSqm = allActiveProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
   
   const nowUTC = new Date();
   const thaiTime = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
@@ -222,7 +215,7 @@ export default async function DashboardPage({
   let intVeryHigh = 0, intHigh = 0, intMedium = 0, intFollow = 0, intLow = 0, intNull = 0; 
   let devCount = 0, archCount = 0, intCount = 0, contCount = 0;
 
-  filteredProjects.forEach(proj => {
+  allActiveProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = orderItem?.orders;
     
@@ -318,7 +311,7 @@ export default async function DashboardPage({
   const pieChartData = individualStats.map(stat => ({ name: stat.name, value: stat.projects }));
   const barChartData = individualStats; 
 
-  const vipProjects = filteredProjects.filter(p => p.is_important);
+  const vipProjects = allActiveProjects.filter(p => p.is_important);
 
   const dashboardSummary = {
     totalProjects: activeProjectsCount,
@@ -333,7 +326,7 @@ export default async function DashboardPage({
 
   const checkInStats: Record<string, { appCount: number, csvCount: number, totalArea: number, locations: string[] }> = {};
 
-  filteredProjects.forEach(proj => {
+  allActiveProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = orderItem?.orders;
     const userId = order?.user_id || 'unknown';
@@ -453,28 +446,12 @@ export default async function DashboardPage({
         stakeholderData={stakeholderData}
       />
 
-      {/* 🌟 แสดงปุ่มแถบแจ้งฟิลเตอร์ชื่อบริษัทที่คลิกจากกราฟ เพื่อความสะดวกในการกดยกเลิกตัวกรอง */}
-      {params?.company && (
-        <div className="mb-4 bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between shadow-sm animate-in fade-in duration-200">
-          <div className="flex items-center gap-2 text-indigo-900 font-bold text-sm">
-            <Building2 size={18} className="text-indigo-600" />
-            <span>กำลังแสดงเฉพาะข้อมูลของ: <span className="text-indigo-600 bg-white border border-indigo-100 px-2.5 py-1 rounded-md ml-1 font-black shadow-sm">{params.company}</span></span>
-          </div>
-          <Link 
-            href="/dashboard"
-            className="text-xs font-bold bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-rose-200 transition-all shadow-sm"
-          >
-            ✕ ล้างการกรองเพื่อดูทั้งหมด
-          </Link>
-        </div>
-      )}
-
-      {/* 🌟 ส่ง Props ดาต้าเบสจำนวนครั้งที่ประมวลผลเสร็จสิ้นแล้วเข้าสู่กราฟแท่งเดี่ยว */}
+      {/* 🌟 ส่งข้อมูลแบบ ID-Based ลุยต่อยอดระบบได้เรียบร้อยครับนาย */}
       <CompanyCandlestickChart data={candlestickData} />
 
       <div className="grid grid-cols-1 mb-8">
         <VipPipelineTable 
-          projects={filteredProjects} 
+          projects={allActiveProjects} 
           profilesMap={profileMap} 
           salesStats={individualStats} 
           customerTypes={customerTypes || []}
@@ -529,6 +506,7 @@ export default async function DashboardPage({
                     {ci.totalArea.toLocaleString()} <span className="text-xs font-bold text-slate-400 ml-0.5">ตร.ม.</span>
                   </td>
                   <td className="px-5 py-3 text-center">
+                    {/* ✅ ยิงประวัติลงพื้นที่ของเซลส์รายบุคคลตามเงื่อนไขเดิมอย่างถูกต้อง */}
                     <Link 
                       href={`/dashboard/checkins/${ci.userId}`} 
                       className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"

@@ -1,76 +1,86 @@
-//src/app/dashboard/checkins/[userId]/page.tsx
+// src/app/dashboard/checkins/[companyId]/page.tsx
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, User, Tag, ShoppingBag, Building2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Map, Image as ImageIcon, FileText, Smartphone, Users, User, Building2, ShieldAlert } from 'lucide-react';
 import ImageGallery from '@/components/ImageGallery';
 import UserCheckInFilter from '@/components/UserCheckInFilter';
 import ExpandableNote from '@/components/ExpandableNote';
 import EditCheckInModal from '@/components/EditCheckInModal';
+import { cookies } from 'next/headers'; // นำเข้าเพื่อใช้อ่าน Token
 
 export const dynamic = 'force-dynamic';
 
-export default async function UserCheckInHistoryPage({ 
+export default async function CompanyCheckInHistoryPage({ 
   params, 
   searchParams 
 }: { 
-  params: { userId: string },
-  searchParams: { start?: string; end?: string; source?: string; minArea?: string; maxArea?: string; role?: string; company?: string; } 
+  params: { companyId: string }, // เปลี่ยนมารับ companyId จาก URL แทน
+  searchParams: { start?: string; end?: string; source?: string; minArea?: string; maxArea?: string; role?: string; } 
 }) {
   const resolvedParams = await Promise.resolve(params);
-  const userId = resolvedParams.userId;
+  const companyId = resolvedParams.companyId; // ไอดีบริษัทจาก URL
   const resolvedSearchParams = await Promise.resolve(searchParams);
 
+  // 🌟 1. ยืนยันตัวตนและดึงสิทธิ์ (Role & Team) ของคนที่ล็อกอินอยู่
+  const cookieStore = await cookies();
+  const token = cookieStore.get('admin_token')?.value;
+  
+  let currentUserRole = 'user';
+  let currentUserTeamId = null;
+
+  if (token) {
+    const { data: authData } = await supabase.auth.getUser(token);
+    if (authData?.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, team_id')
+        .eq('id', authData.user.id)
+        .single();
+        
+      if (profile) {
+        currentUserRole = profile.role;
+        currentUserTeamId = profile.team_id;
+      }
+    }
+  }
+
+  // 🌟 2. ดึงชื่อบริษัทมาแสดงเป็นหัวข้อ (ดึงจาก companyId ตรงๆ)
+  const { data: companyData } = await supabase
+    .from('companies')
+    .select('name')
+    .eq('id', companyId)
+    .single();
+    
+  const companyName = companyData?.name || 'ไม่พบข้อมูลบริษัท';
+
+  // 3. จัดการพารามิเตอร์ Filter อื่นๆ
   let startIso = '';
   let endIso = '';
   if (resolvedSearchParams?.start) startIso = new Date(`${resolvedSearchParams.start}T00:00:00+07:00`).toISOString();
   if (resolvedSearchParams?.end) endIso = new Date(`${resolvedSearchParams.end}T23:59:59.999+07:00`).toISOString();
   
-  // 🌟 เปลี่ยนจาก 'APP' เป็น 'ALL' เพื่อให้มันดึงข้อมูลงานที่มาจาก CSV ด้วยแต่แรก
   const filterSource = resolvedSearchParams?.source || 'ALL'; 
   const minAreaFilter = resolvedSearchParams?.minArea ? Number(resolvedSearchParams.minArea) : null;
   const maxAreaFilter = resolvedSearchParams?.maxArea ? Number(resolvedSearchParams.maxArea) : null;
   const roleFilter = resolvedSearchParams?.role || 'ALL';
-  
-  // 🌟 Next.js ถอดรหัส URL มาให้แล้ว รับค่าตรงๆ ได้เลยป้องกัน Error 
-  const filterCompany = resolvedSearchParams?.company ? resolvedSearchParams.company.trim() : '';
 
-  // ฟังก์ชันละลายช่องว่าง เอาไว้จับเทียบชื่อบริษัทให้แม่นยำ 100%
-  const normalizeText = (text: string) => text ? text.replace(/\s+/g, '').toLowerCase() : '';
-  const targetCompanyStr = normalizeText(filterCompany);
-
-  // 1. ดึงข้อมูลพนักงาน
-  let userName = 'ทีมเซลส์ทั้งหมด (All Sales)';
-  if (userId !== 'all') {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', userId)
-      .single();
-    if (profile) userName = profile.full_name;
-  }
-
-  // 2. ดึงข้อมูล Category เตรียมให้ Modal
+  // 4. ดึงข้อมูล Category เตรียมให้ Modal
   const { data: categoriesData } = await supabase
     .from('product_categories')
     .select('id, name')
     .order('name');
   const categories = categoriesData || [];
 
-  // 3. ดึงข้อมูล Order และความสัมพันธ์ 
+// 🌟 5. สร้าง Query ดึงออเดอร์ โดยอิงจาก company_id และ สิทธิ์การมองเห็น
   let query = supabase
     .from('orders')
     .select(`
-      id, created_at, audit_log, phone, customer_name, source, user_id,
-      companies (name),
+      id, created_at, audit_log, phone, customer_name, source, user_id, team_id,
       profiles (full_name),
       order_items (
-        id, 
-        product_category_id, 
-        images, 
-        note,
+        id, product_category_id, images, note,
         order_item_projects (
-          id, 
-          project_name, area_sqm, is_deleted, project_note,
+          id, project_name, area_sqm, is_deleted, project_note,
           account_developer, contact_developer,
           account_architecture, contact_architecture,
           account_interior, contact_interior,
@@ -79,10 +89,14 @@ export default async function UserCheckInHistoryPage({
         )
       )
     `)
+    .eq('company_id', companyId) 
+    // 🚨 สั่ง Supabase โดยตรงเลยว่า "ห้ามเอาออเดอร์ที่ audit_log เป็น null มาให้ฉัน!"
+    .not('audit_log', 'is', null) 
     .order('created_at', { ascending: false });
 
-  if (userId !== 'all') {
-    query = query.eq('user_id', userId);
+  // 🛡️ ระบบรักษาความปลอดภัย: ถ้าไม่ใช่ Admin บังคับดูได้แค่ของทีมตัวเอง
+  if (currentUserRole !== 'admin') {
+    query = query.eq('team_id', currentUserTeamId);
   }
 
   if (startIso) query = query.gte('created_at', startIso);
@@ -94,40 +108,26 @@ export default async function UserCheckInHistoryPage({
     console.error("Fetch History Error:", error.message);
   }
 
-  // 4. Transform จัดกลุ่มแยกข้อมูลเป็นกล่องออเดอร์
+  // 6. Transform Data 
   const ordersList: any[] = [];
   let totalAppCount = 0;
   let totalCsvCount = 0;
   let totalProjectsCount = 0;
 
+  // โค้ดส่วน Transform สะอาดขึ้นมากเพราะไม่ต้องมานั่งเช็ค String บริษัทแล้ว
   historyData?.forEach(order => {
-    // 🌟 ดึงชื่อบริษัทออกมาให้ปลอดภัยจาก Type Error รองรับทั้งแบบ Array และ Object
-    let dbCompanyName = '';
-    if (Array.isArray(order.companies)) {
-      dbCompanyName = order.companies[0]?.name || '';
-    } else if (order.companies) {
-      dbCompanyName = (order.companies as any).name || '';
-    }
+    const auditLog = order.audit_log as any;
+    const isCsv = !auditLog;
 
-    // 🌟 ดึงชื่อเซลส์ออกมาให้ปลอดภัยจาก Type Error รองรับทั้งแบบ Array และ Object
+    if (filterSource === 'APP' && isCsv) return;
+    if (filterSource === 'CSV' && !isCsv) return;
+    
     let dbSalesName = '';
     if (Array.isArray(order.profiles)) {
       dbSalesName = order.profiles[0]?.full_name || '';
     } else if (order.profiles) {
       dbSalesName = (order.profiles as any).full_name || '';
     }
-
-    // 🌟 กรองบริษัทโดยใช้ฟังก์ชันละลายช่องว่าง (ลบช่องว่างทิ้งก่อนเทียบ)
-    if (targetCompanyStr && normalizeText(dbCompanyName) !== targetCompanyStr) {
-      return; // ถ้าจับเทียบแบบไม่มีช่องว่างแล้วยังไม่ตรงกัน ค่อยเตะทิ้ง!
-    }
-
-    const auditLog = order.audit_log as any;
-    const isCsv = !auditLog;
-
-    // ระบบกรองช่องทาง APP / CSV / ALL
-    if (filterSource === 'APP' && isCsv) return;
-    if (filterSource === 'CSV' && !isCsv) return;
     
     const validProjects: any[] = [];
     
@@ -152,19 +152,16 @@ export default async function UserCheckInHistoryPage({
           }
 
           let imagesArray: string[] = [];
-          if (Array.isArray(item.images)) {
-            imagesArray = item.images;
-          }
+          if (Array.isArray(item.images)) imagesArray = item.images;
 
           const matchedCategory = categories.find(c => c.id === item.product_category_id);
-          const categoryName = matchedCategory ? matchedCategory.name : 'ไม่ระบุหมวดหมู่';
 
           validProjects.push({
             id: proj.id || `${proj.project_name}-${order.id}`,
             orderItemId: item.id,
             projectId: proj.id,
             categoryId: item.product_category_id,
-            categoryName: categoryName,
+            categoryName: matchedCategory ? matchedCategory.name : 'ไม่ระบุหมวดหมู่',
             projectName: proj.project_name || 'ไม่ระบุชื่อโปรเจกต์',
             projectType: proj.project_types?.name || '-',
             area: proj.area_sqm,
@@ -174,14 +171,10 @@ export default async function UserCheckInHistoryPage({
             note: item.note || proj.project_note || '',
             device: auditLog?.device?.brand ? `${auditLog.device.brand} ${auditLog.device.model}` : 'ไม่ระบุอุปกรณ์',
             stakeholders: {
-              devAcc: proj.account_developer,
-              devCont: proj.contact_developer,
-              archAcc: proj.account_architecture,
-              archCont: proj.contact_architecture,
-              intAcc: proj.account_interior,
-              intCont: proj.contact_interior,
-              contAcc: proj.account_contractor,
-              contCont: proj.contact_contractor
+              devAcc: proj.account_developer, devCont: proj.contact_developer,
+              archAcc: proj.account_architecture, archCont: proj.contact_architecture,
+              intAcc: proj.account_interior, intCont: proj.contact_interior,
+              contAcc: proj.account_contractor, contCont: proj.contact_contractor
             }
           });
         });
@@ -193,18 +186,15 @@ export default async function UserCheckInHistoryPage({
       totalProjectsCount += validProjects.length;
 
       const dateUTC = new Date(order.created_at);
-      const dateStr = dateUTC.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: 'numeric' });
-      const timeStr = dateUTC.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) + ' น.';
-
       ordersList.push({
         orderId: order.id,
-        salesName: dbSalesName || 'ไม่ระบุเซลส์', // ✨ ใช้ตัวแปรที่ดึงมาอย่างปลอดภัย
+        salesName: dbSalesName || 'ไม่ระบุเซลส์',
         customerName: order.customer_name || 'ไม่ระบุชื่อลูกค้า',
-        companyName: dbCompanyName || 'ลูกค้าทั่วไป (B2C)', // ✨ ใช้ตัวแปรที่ดึงมาอย่างปลอดภัย
+        companyName: companyName, // ใช้ชื่อบริษัทที่ query มาได้เลย
         phone: order.phone || '-',
         isCsv: isCsv,
-        date: dateStr,
-        time: timeStr,
+        date: dateUTC.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: 'numeric' }),
+        time: dateUTC.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) + ' น.',
         timestamp: dateUTC.getTime(),
         projects: validProjects
       });
@@ -215,41 +205,29 @@ export default async function UserCheckInHistoryPage({
 
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
-      
-      {/* ส่วนหัวกระดาษและสรุป */}
       <div className="mb-6 max-w-[1600px] w-[96%] mx-auto">
-        <Link 
-          href="/dashboard"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-indigo-600 transition-colors mb-4"
-        >
+        <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-indigo-600 transition-colors mb-4">
           <ArrowLeft size={16} /> กลับไปหน้าภาพรวมหลัก
         </Link>
 
-        {filterCompany && (
-          <div className="mb-4 bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between shadow-sm gap-3">
-            <div className="flex items-center gap-2 text-indigo-900 font-bold text-sm">
-              <Building2 size={20} className="text-indigo-600" />
-              <span>กางลายแทงการเข้าพบของบริษัท: <span className="text-indigo-600 bg-white border border-indigo-100 px-3 py-1.5 rounded-lg ml-1 font-black shadow-sm text-base">{filterCompany}</span></span>
-            </div>
-            <Link 
-              href={`/dashboard/checkins/${userId}`}
-              className="text-xs font-bold bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-rose-200 transition-all shadow-sm w-fit"
-            >
-              ✕ ล้างตัวกรอง (ดูทั้งหมด)
-            </Link>
+        {/* 🛡️ แจ้งเตือนสถานะการมองเห็นตามสิทธิ์ */}
+        {currentUserRole !== 'admin' && (
+          <div className="mb-4 bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center gap-3 shadow-sm">
+            <ShieldAlert size={18} className="text-amber-600" />
+            <span className="text-xs font-bold text-amber-800">มุมมองจำกัด: แสดงผลเฉพาะข้อมูลโปรเจกต์ที่รับผิดชอบโดยทีมของคุณเท่านั้น</span>
           </div>
         )}
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-2xl shadow-md shrink-0">
-              {userId === 'all' ? <Users size={24} /> : userName.charAt(0)}
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
+              <Building2 size={24} />
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
-                ประวัติลงพื้นที่
+                {companyName}
               </h1>
-              <p className="text-slate-500 text-sm mt-1">พนักงาน: <span className="font-semibold text-indigo-600">{userName}</span></p>
+              <p className="text-slate-500 text-sm mt-1">ประวัติการเข้าพบและออเดอร์ทั้งหมด</p>
             </div>
           </div>
           
@@ -283,7 +261,7 @@ export default async function UserCheckInHistoryPage({
               <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-5">
                 <MapPin size={48} className="text-slate-300" />
               </div>
-              <p className="text-xl font-medium text-slate-500">ไม่พบข้อมูลประวัติของบริษัทนี้</p>
+              <p className="text-xl font-medium text-slate-500">ไม่พบข้อมูลประวัติออเดอร์ของบริษัทนี้ในทีมของคุณ</p>
             </div>
           ) : (
             ordersList.map((order, orderIdx) => (
@@ -296,14 +274,9 @@ export default async function UserCheckInHistoryPage({
                         {order.isCsv ? <FileText size={12}/> : <Smartphone size={12}/>}
                         ORDER #{order.orderId.substring(0, 8).toUpperCase()}
                       </span>
-                      <span className="text-sm font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
-                        🏢 บริษัท: <span className="text-indigo-700 font-black">{order.companyName}</span>
+                      <span className="text-sm font-bold text-slate-600 border border-slate-200 bg-white px-3 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
+                        <User size={14} className="text-indigo-400"/> เซลส์: <span className="text-indigo-600">{order.salesName}</span>
                       </span>
-                      {userId === 'all' && (
-                        <span className="text-sm font-bold text-slate-600 border border-slate-200 bg-white px-3 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
-                          <User size={14} className="text-indigo-400"/> เซลส์: <span className="text-indigo-600">{order.salesName}</span>
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-4">
                       <span className="flex items-center gap-1"><User size={14} className="text-slate-400"/> ผู้ติดต่อหน้างาน: {order.customerName}</span>
@@ -343,13 +316,13 @@ export default async function UserCheckInHistoryPage({
                               </div>
                             </div>
                             
-                            {!order.isCsv && userId !== 'all' && (
+                            {!order.isCsv && (
                               <EditCheckInModal 
                                 orderItemId={proj.orderItemId}
                                 projectId={proj.projectId}
                                 currentCategoryId={proj.categoryId}
                                 currentArea={proj.area}
-                                userId={userId}
+                                userId={order.user_id} // แนบ user_id ของ order แทนเผื่อต้องเช็คสิทธิ์ในอนาคต
                                 categories={categories}
                               />
                             )}
