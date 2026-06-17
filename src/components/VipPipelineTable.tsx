@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useTransition, useMemo } from 'react'; // 🌟 1. เพิ่ม useTransition และ useMemo
+import { useState, useEffect, useTransition, useMemo } from 'react'; 
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -18,9 +18,6 @@ interface Props {
   productCategories: { id: string; name: string }[];
 }
 
-// ============================================================================
-// 🌟 1. แยก MODAL ออกมาเป็น COMPONENT เด็ดขาด
-// ============================================================================
 function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategories, onRefresh }: any) {
   const [formData, setFormData] = useState({
     projectName: '',
@@ -28,7 +25,9 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
     area: '0',
     customerName: '',
     projectTypeId: '',
-    categoryId: ''
+    categoryId: '',
+    queueLevel: '', 
+    projectYear: '2569' // 🌟 ตั้งค่าเริ่มต้นตอน Component โหลด
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -40,7 +39,10 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
         area: data.proj.area_sqm?.toString() || '0',
         customerName: data.order?.customer_name || '',
         projectTypeId: data.proj.project_type_id || '',
-        categoryId: data.item?.product_category_id || ''
+        categoryId: data.item?.product_category_id || '',
+        queueLevel: data.proj.queue_level || '', 
+        // 🌟 ไฮไลท์ตรงนี้ครับ: ถ้าไม่มีข้อมูลเดิม ให้โยนเลข 2569 ใส่เข้าไปรอเลย!
+        projectYear: data.proj.project_year || '2569' 
       });
     }
   }, [isOpen, data]);
@@ -55,7 +57,9 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
         project_name: formData.projectName.trim() || null,
         project_note: formData.note.trim() || null,
         area_sqm: Number(formData.area) || 0,
-        project_type_id: formData.projectTypeId || null
+        project_type_id: formData.projectTypeId || null,
+        queue_level: formData.queueLevel || null, 
+        project_year: formData.projectYear.trim() || null 
       }).eq('id', data.proj.id);
 
       let orderUpdate = null;
@@ -96,7 +100,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200 relative">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200 relative">
         
         {isSaving && (
           <div className="absolute inset-0 z-50 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center">
@@ -129,6 +133,23 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">พื้นที่ (ตร.ม.)</label>
               <input type="number" value={formData.area} onChange={(e) => setFormData({...formData, area: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 font-bold text-emerald-600" />
             </div>
+            
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">ลำดับคิว (1-4)</label>
+                <select value={formData.queueLevel} onChange={(e) => setFormData({...formData, queueLevel: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 appearance-none bg-amber-50">
+                  <option value="">- ระบุคิว -</option>
+                  <option value="1">คิวที่ 1</option>
+                  <option value="2">คิวที่ 2</option>
+                  <option value="3">คิวที่ 3</option>
+                  <option value="4">คิวที่ 4</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">พ.ศ. (คาดการณ์)</label>
+                <input type="number" placeholder="เช่น 2569" value={formData.projectYear} onChange={(e) => setFormData({...formData, projectYear: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 bg-amber-50" />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -150,7 +171,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
 
           <div className="col-span-1 md:col-span-2 mt-2">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">หมายเหตุ / คอมเมนต์</label>
-            <textarea value={formData.note} onChange={(e) => setFormData({...formData, note: e.target.value})} className="w-full border border-amber-300 rounded-lg px-3 py-3 outline-none focus:ring-2 focus:ring-amber-100 bg-amber-50/50 resize-none min-h-[100px] text-slate-700" placeholder="พิมพ์หมายเหตุเพิ่มเติมที่นี่..." />
+            <textarea value={formData.note} onChange={(e) => setFormData({...formData, note: e.target.value})} className="w-full border border-indigo-200 rounded-lg px-3 py-3 outline-none focus:ring-2 focus:ring-indigo-100 bg-indigo-50/30 resize-none min-h-[100px] text-slate-700" placeholder="พิมพ์หมายเหตุเพิ่มเติมที่นี่..." />
           </div>
         </div>
 
@@ -166,13 +187,9 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
   );
 }
 
-// ============================================================================
-// 🌟 2. ตารางหลัก
-// ============================================================================
 export default function VipPipelineTable({ projects, profilesMap, salesStats, customerTypes = [], projectTypes = [], productCategories = [] }: Props) {
   const router = useRouter();
   
-  // 🌟 2. เรียกใช้งาน useTransition เพื่อทำลื่นไหล
   const [isPending, startTransition] = useTransition();
 
   const [viewMode, setViewMode] = useState<'projects' | 'performance'>('projects');
@@ -184,7 +201,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
   const [sizeFilter, setSizeFilter] = useState<'all' | 'M' | 'L' | 'XL'>('all');
   
-  // 🌟 3. สร้าง Helper Function สำหรับเปลี่ยน Filter แบบมี Transition ครอบไว้
   const handleFilterChange = (setter: any, value: any) => {
     startTransition(() => {
       setter(value);
@@ -214,7 +230,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
     } finally { setLoadingId(null); }
   };
 
-  // 🌟 4. เอา useMemo มาคลุมการคำนวณ เพื่อให้มันจำค่าไว้ ไม่ต้องคำนวณใหม่ทุกครั้งที่ขยับเมาส์
   const displayProjects = useMemo(() => {
     let filtered = projects.filter(proj => {
       const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
@@ -245,7 +260,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
       if (sortArea === 'asc') return areaA - areaB;
       return 0; 
     });
-  }, [projects, tab, sizeFilter, sortArea]); // สั่งให้คำนวณใหม่เฉพาะตอนที่เปลี่ยนเงื่อนไขพวกนี้
+  }, [projects, tab, sizeFilter, sortArea]); 
 
   const sortedSalesStats = useMemo(() => {
     return [...salesStats].sort((a, b) => {
@@ -315,7 +330,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
               <>
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex flex-wrap gap-2">
-                    {/* 🌟 5. เปลี่ยน onClick ทุกปุ่มให้ผ่าน handleFilterChange ป้องกันหน้ากระตุก */}
                     <button onClick={() => handleFilterChange(setTab, 1)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
                       <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว
                     </button>
@@ -349,27 +363,34 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
           </div>
         </div>
 
-        {/* 🌟 6. ใส่เอฟเฟกต์เฟดตอนเปลี่ยนหน้า ถ้ากำลังโหลด (isPending) ตารางจะจางลงนิดนึง ดูพรีเมียมๆ */}
         <div className={`overflow-x-auto overflow-y-auto max-h-[600px] transition-opacity duration-300 ${isPending ? 'opacity-30' : 'opacity-100'}`}>
           {viewMode === 'projects' ? (
-            <table className="w-full text-left text-sm table-fixed min-w-[1600px]">
-             <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">วันที่</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">เซลส์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ผู้ดูแล (ACCOUNT)</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[20%]">โปรเจกต์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[15%]">คอมเมนต์</th>
-                <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[12%]">ประเภทโครงการ</th>
-                <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">ประเภทสินค้า</th>
-                <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-right w-[6%]">(ตร.ม.)</th>
-                <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%]">ลูกค้า</th>
-                <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-center w-[4%]">ช่องทาง</th>
-              </tr>
-            </thead>
+            <table className="w-full text-left text-sm table-fixed min-w-[1800px]">
+              <thead className="text-slate-500 text-xs uppercase font-black tracking-widest sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[7%]">วันที่</th>
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[8%]">เซลส์</th>
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[10%]">ผู้ดูแล (ACCOUNT)</th>
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[14%]">โปรเจกต์</th>
+                  
+                  {/* 🌟 แยก 2 คอลัมน์โน้ต/คอมเมนต์ */}
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[13%]">โน้ตจากเซลส์</th>
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[13%]">คอมเมนต์แอดมิน</th>
+                  
+                  {/* 🌟 เพิ่มคิว กับ พ.ศ. */}
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[4%] text-center">คิว</th>
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%] text-center">พ.ศ.</th>
+
+                  <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[9%]">ประเภทโครงการ</th>
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[6%]">ประเภทสินค้า</th>
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-right w-[4%]">(ตร.ม.)</th>
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[4%]">ลูกค้า</th>
+                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 text-center w-[3%]">ช่องทาง</th>
+                </tr>
+              </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayProjects.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลโครงการตามเงื่อนไขที่เลือกครับ</td></tr>
+                  <tr><td colSpan={13} className="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลโครงการตามเงื่อนไขที่เลือกครับ</td></tr>
                 ) : (
                   displayProjects.map((proj, idx) => {
                     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
@@ -386,6 +407,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
 
                     return (
                       <tr key={`${proj.id}-${idx}`} className="hover:bg-slate-50/80 transition-colors group">
+                        
                         <td className="px-5 py-4 align-middle">
                           <div className="flex items-center gap-1.5 text-slate-500 font-medium">
                             <CalendarDays size={14} className="text-slate-400" />
@@ -426,10 +448,21 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         </td>
 
                         <td className="px-5 py-4 align-middle text-slate-600 text-sm">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className={`line-clamp-2 ${proj.project_note ? 'text-slate-700' : 'text-slate-300 italic'}`}>
-                              {proj.project_note || 'แสดงความคิดเห็น'}
+                          {item?.note ? (
+                            <div className="bg-sky-50 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-sky-100 line-clamp-2 font-medium" title={item.note}>
+                              {item.note}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 italic text-xs">ไม่มีโน้ตจากเซลส์</span>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4 align-middle text-slate-600 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`line-clamp-2 ${proj.project_note ? 'text-slate-700 font-medium' : 'text-slate-300 italic text-xs'}`} title={proj.project_note}>
+                              {proj.project_note || 'แสดงความคิดเห็น...'}
                             </span>
+                            
                             <button 
                               onClick={() => setActiveEditItem({ proj, order, item })}
                               className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-600 hover:text-white transition-all opacity-0 group-hover:opacity-100 shrink-0 shadow-sm"
@@ -438,6 +471,22 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                               <Edit2 size={14} />
                             </button>
                           </div>
+                        </td>
+
+                        {/* 🌟 7. ลำดับคิว */}
+                        <td className="px-3 py-4 align-middle text-center">
+                          {proj.queue_level ? (
+                            <span className="bg-amber-100 text-amber-700 font-black text-xs px-2.5 py-1 rounded-md shadow-sm border border-amber-200">
+                              Q{proj.queue_level}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+
+                        {/* 🌟 8. ปี พ.ศ. */}
+                        <td className="px-3 py-4 align-middle text-center font-bold text-slate-700 text-sm">
+                          {proj.project_year || '-'}
                         </td>
 
                         <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
@@ -461,11 +510,11 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                         <td className="px-5 py-4 align-middle text-center">
                           {hasAuditLog ? (
                             <div className="mx-auto flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded-md w-fit shadow-sm">
-                              <Smartphone size={12} /> Mobile App
+                              <Smartphone size={12} />App
                             </div>
                           ) : (
                             <div className="mx-auto flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md w-fit shadow-sm">
-                              <FileText size={12} /> CSV File
+                              <FileText size={12} /> File
                             </div>
                           )}
                         </td>
@@ -519,7 +568,6 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
         </div>
       </div>
 
-      {/* เรียกใช้งาน Modal */}
       <EditProjectModal 
         isOpen={!!activeEditItem} 
         data={activeEditItem} 

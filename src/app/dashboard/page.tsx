@@ -98,16 +98,16 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 5. 🛠️ แก้บั๊กใหญ่: ใช้ Function ผลิต Query ใหม่ทุกครั้ง เพื่อกันตัวแปรทับกัน ---
-  const buildBaseQuery = () => {
+const buildBaseQuery = () => {
     let q = supabase
       .from('order_item_projects')
       .select(`
         id, project_name, area_sqm, created_at, is_important, project_type_id, project_note,
         account_developer, account_architecture, account_interior, account_contractor,
+        queue_level, project_year, 
         project_types (name), 
         order_items!inner (
-          id, interest_level, images, product_category_id,
+          id, note, interest_level, images, product_category_id,
           product_categories (name), 
           orders!inner (
             id, customer_name, phone, user_id, team_id, is_synced, audit_log, source,
@@ -118,7 +118,6 @@ export default async function DashboardPage({
       .or('is_deleted.eq.false,is_deleted.is.null')
       .gte('created_at', startIso)
       .lte('created_at', endIso);
-
     if (minArea) q = q.gte('area_sqm', minArea);
     if (maxArea) q = q.lte('area_sqm', maxArea);
     if (filterProjectType !== 'ALL') q = q.eq('project_type_id', filterProjectType);
@@ -154,16 +153,16 @@ export default async function DashboardPage({
     // 🌟 สร้างใบงานยิงพร้อมกันขนานไปหา Supabase โดยเรียก buildBaseQuery() ใหม่ทุกรอบ!
     for (let offset = 0; offset < total; offset += PAGE_SIZE) {
       promises.push(
-        buildBaseQuery() // 💥 ใช้ Function สร้าง Query ใหม่ ตัวแปรจะได้ไม่ทับกัน
+        buildBaseQuery() 
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1)
       );
     }
     
-    // 💥 ยิงตู้มเดียวพร้อมกันแบบคู่ขนาน! ไม่ต้องนั่งรอต่อคิว
+    // 💥 ยิงตู้มเดียวพร้อมกันแบบคู่ขนาน!
     const results = await Promise.all(promises);
     
-    // รวมร่างข้อมูลจากทุก Request เข้าด้วยกัน ของแท้มาครบไม่มีหล่นหายแน่นอนครับนาย
+    // รวมร่างข้อมูลจากทุก Request เข้าด้วยกัน
     results.forEach(({ data, error }) => {
       if (error) console.error("Parallel Fetch Segment Error:", error.message);
       if (data) allActiveProjects = [...allActiveProjects, ...data];
@@ -466,7 +465,6 @@ export default async function DashboardPage({
         stakeholderData={stakeholderData}
       />
 
-      {/* กราฟแท่งไล่ระดับสีแยกรายเซลส์แบบสวยๆ ครบถ้วน */}
       <CompanyCandlestickChart data={candlestickData} salesKeys={chartSalesKeys} />
 
       <div className="grid grid-cols-1 mb-8">
