@@ -26,7 +26,16 @@ export default async function DashboardPage({
 }) {
   const params = await Promise.resolve(searchParams);
 
-  // 🌟 1. ดึงข้อมูลผู้ใช้ปัจจุบัน (Current User) แบบ Server Component
+  // 🚀 1. สั่งดึง Master Data คู่ขนานทิ้งไว้เบื้องหลังทันทีเพื่อความเร็วระดับแสง
+  const masterDataPromise = Promise.all([
+    supabase.from('profiles').select('id, full_name, team_id'),
+    supabase.from('project_types').select('id, name'),
+    supabase.from('product_categories').select('id, name'),
+    supabase.from('teams').select('id, team_name').order('team_name'),
+    supabase.from('customer_types').select('id, name')
+  ]);
+
+  // 🌟 2. ดึงข้อมูลผู้ใช้ปัจจุบัน (Current User) แบบ Server Component
   const cookieStore = await cookies();
   const token = cookieStore.get('admin_token')?.value;
   let user = null;
@@ -51,20 +60,14 @@ export default async function DashboardPage({
     }
   }
 
-  // --- 2. ดึง Master Data ---
+  // 🚀 3. แกะกล่องรับข้อมูล Master Data ที่ดึงรอนานแล้ว
   const [
     { data: profiles },
     { data: projectTypes },
     { data: productCategories },
     { data: teams },
     { data: customerTypes }
-  ] = await Promise.all([
-    supabase.from('profiles').select('id, full_name, team_id'),
-    supabase.from('project_types').select('id, name'),
-    supabase.from('product_categories').select('id, name'),
-    supabase.from('teams').select('id, team_name').order('team_name'),
-    supabase.from('customer_types').select('id, name')
-  ]);
+  ] = await masterDataPromise;
 
   const profileMap: Record<string, string> = {};
   profiles?.forEach(p => { profileMap[p.id] = p.full_name; });
@@ -72,15 +75,22 @@ export default async function DashboardPage({
   const projectTypeMap: Record<string, string> = {};
   projectTypes?.forEach(pt => { projectTypeMap[pt.id] = pt.name; });
 
-  // --- 3. จัดการตัวแปร Filter ---
-  let startIso = '';
-  let endIso = '';
-  if (params?.start) startIso = new Date(`${params.start}T00:00:00+07:00`).toISOString();
-  if (params?.end) endIso = new Date(`${params.end}T23:59:59.999+07:00`).toISOString();
+  // --- 4. จัดการตัวแปร Filter และคำนวณย้อนหลัง 30 วัน (Trailing 30 Days) ---
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  thirtyDaysAgo.setHours(0, 0, 0, 0); 
 
-  // บังคับสิทธิ์ตรงนี้: ถ้าไม่ใช่ Admin บังคับ filterTeam เป็นทีมตัวเองทันที
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  let startIso = params?.start 
+    ? new Date(`${params.start}T00:00:00+07:00`).toISOString() 
+    : thirtyDaysAgo.toISOString();
+    
+  let endIso = params?.end 
+    ? new Date(`${params.end}T23:59:59.999+07:00`).toISOString() 
+    : endOfToday.toISOString();
+
   const filterTeam = currentUserRole === 'admin' ? (params?.team || 'ALL') : currentUserTeamId;
-  
   const filterSales = params?.sales || 'ALL';
   const filterProjectType = params?.projectType || 'ALL';
   const filterProductCategory = params?.productCategory || 'ALL';
@@ -88,14 +98,9 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-  // --- 4. ดึงข้อมูลโปรเจกต์ ---
-  let allActiveProjects: any[] = [];
-  let isFetching = true;
-  let startRow = 0;
-  const step = 1000;
-
-  while (isFetching) {
-    let query = supabase
+  // --- 5. 🛠️ แก้บั๊กใหญ่: ใช้ Function ผลิต Query ใหม่ทุกครั้ง เพื่อกันตัวแปรทับกัน ---
+  const buildBaseQuery = () => {
+    let q = supabase
       .from('order_item_projects')
       .select(`
         id, project_name, area_sqm, created_at, is_important, project_type_id, project_note,
@@ -109,91 +114,106 @@ export default async function DashboardPage({
             companies (id, name) 
           )
         )
-      `)
+      `, { count: 'exact' }) 
       .or('is_deleted.eq.false,is_deleted.is.null')
-      .order('created_at', { ascending: false })
-      .range(startRow, startRow + step - 1);
+      .gte('created_at', startIso)
+      .lte('created_at', endIso);
 
-    if (startIso || endIso) {
-      if (startIso && endIso) {
-        query = query.gte('created_at', startIso).lte('created_at', endIso);
-      } else if (startIso) {
-        query = query.gte('created_at', startIso);
-      } else if (endIso) {
-        query = query.lte('created_at', endIso);
-      }
-    }
-
-    if (minArea) query = query.gte('area_sqm', minArea);
-    if (maxArea) query = query.lte('area_sqm', maxArea);
-    if (filterProjectType !== 'ALL') query = query.eq('project_type_id', filterProjectType);
-
-    if (filterProductCategory !== 'ALL') {
-      query = query.eq('order_items.product_category_id', filterProductCategory);
-    }
-    
-    if (filterSales !== 'ALL') {
-      query = query.eq('order_items.orders.user_id', filterSales);
-    }
-    
-    if (filterTeam !== 'ALL') {
-      query = query.eq('order_items.orders.team_id', filterTeam);
-    }
+    if (minArea) q = q.gte('area_sqm', minArea);
+    if (maxArea) q = q.lte('area_sqm', maxArea);
+    if (filterProjectType !== 'ALL') q = q.eq('project_type_id', filterProjectType);
+    if (filterProductCategory !== 'ALL') q = q.eq('order_items.product_category_id', filterProductCategory);
+    if (filterSales !== 'ALL') q = q.eq('order_items.orders.user_id', filterSales);
+    if (filterTeam !== 'ALL') q = q.eq('order_items.orders.team_id', filterTeam);
 
     if (filterSource === 'APP') {
-      query = query.not('order_items.orders.audit_log', 'is', null);
+      q = q.not('order_items.orders.audit_log', 'is', null);
     } else if (filterSource === 'IMPORT') {
-      query = query.is('order_items.orders.audit_log', null);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Dashboard Fetch Error:", error.message);
-      break;
+      q = q.is('order_items.orders.audit_log', null);
     }
     
-    if (data && data.length > 0) {
-      allActiveProjects = [...allActiveProjects, ...data];
-      startRow += step;
-    }
-    
-    if (!data || data.length < step) {
-      isFetching = false;
-    }
+    return q;
+  };
+
+  // 🌟 ยิงรอบแรกเบาๆ เพื่อขอจำนวนข้อมูลทั้งหมดจริง (เอาแค่ Count มาคำนวณหน้า)
+  const { count: totalCount, error: countError } = await buildBaseQuery()
+    .order('created_at', { ascending: false })
+    .range(0, 0);
+
+  if (countError) {
+    console.error("Fetch Count Error:", countError.message);
   }
 
-// 🌟 5. รวบรวมข้อมูลดิบและเก็บ id (UUID) ของบริษัทส่งเข้าสู่กราฟแท่งเดี่ยวชัวร์ที่สุด
-  const companyStats: Record<string, { id: string, name: string, count: number }> = {};
-  
+  let allActiveProjects: any[] = [];
+  const total = totalCount || 0;
+
+  if (total > 0) {
+    const PAGE_SIZE = 1000;
+    const promises = [];
+    
+    // 🌟 สร้างใบงานยิงพร้อมกันขนานไปหา Supabase โดยเรียก buildBaseQuery() ใหม่ทุกรอบ!
+    for (let offset = 0; offset < total; offset += PAGE_SIZE) {
+      promises.push(
+        buildBaseQuery() // 💥 ใช้ Function สร้าง Query ใหม่ ตัวแปรจะได้ไม่ทับกัน
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1)
+      );
+    }
+    
+    // 💥 ยิงตู้มเดียวพร้อมกันแบบคู่ขนาน! ไม่ต้องนั่งรอต่อคิว
+    const results = await Promise.all(promises);
+    
+    // รวมร่างข้อมูลจากทุก Request เข้าด้วยกัน ของแท้มาครบไม่มีหล่นหายแน่นอนครับนาย
+    results.forEach(({ data, error }) => {
+      if (error) console.error("Parallel Fetch Segment Error:", error.message);
+      if (data) allActiveProjects = [...allActiveProjects, ...data];
+    });
+  }
+
+  // --- 6. รวบรวมข้อมูลดิบแยกตามรายชื่อเซลส์เพื่อส่งให้กราฟแท่งไล่ระดับสี (Gradient Stacked) ---
+  const companyStats: Record<string, { id: string, name: string, count: number, salesBreakdown: Record<string, number> }> = {};
+  const uniqueSalesNamesForChart = new Set<string>();
+
   allActiveProjects.forEach(proj => {
     const orderItem = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
     const order = orderItem?.orders;
     const company = order?.companies;
     
-    // 🚨 ขั้นสุดครับนาย! ถ้า audit_log เป็น null (พวกงาน CSV) สั่ง return เตะทิ้งทันที ไม่นับลงกราฟ
     if (!order?.audit_log) return;
 
-    // ยอมรับโครงสร้างออบเจกต์ที่มีทั้ง ID และ Name ครบถ้วน
+    const userId = order?.user_id || 'unknown';
+    const salesName = profileMap[userId] || (userId === 'unknown' ? 'ไม่ระบุ/ไม่มีเซลส์' : 'พนักงานที่ถูกลบ');
+
     if (company && company.name && company.id) {
       const cName = company.name;
+      
       if (!companyStats[cName]) {
-        companyStats[cName] = { id: company.id, name: cName, count: 0 };
+        companyStats[cName] = { id: company.id, name: cName, count: 0, salesBreakdown: {} };
       }
+      
       companyStats[cName].count += 1; 
+      
+      if (!companyStats[cName].salesBreakdown[salesName]) {
+        companyStats[cName].salesBreakdown[salesName] = 0;
+      }
+      companyStats[cName].salesBreakdown[salesName] += 1;
+      
+      uniqueSalesNamesForChart.add(salesName);
     }
   });
 
-  // แปลงโครงสร้างข้อมูลส่งต่อไปยังกราฟคอมโพเนนต์โดยแนบ id ติดไปด้วย
   const candlestickData = Object.values(companyStats)
     .map(comp => ({
-      id: comp.id,     // ✅ แนบ ID บริษัทส่งให้กราฟคลิกข้ามหน้า
+      id: comp.id,
       name: comp.name,
-      count: comp.count
+      count: comp.count, 
+      ...comp.salesBreakdown 
     }))
     .sort((a, b) => b.count - a.count);
 
-  // คำนวณยอดหน้าหลัก
+  const chartSalesKeys = Array.from(uniqueSalesNamesForChart);
+
+  // คำนวณยอดสรุปหน้าหลัก
   const activeProjectsCount = allActiveProjects.length; 
   const totalAreaSqm = allActiveProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
   
@@ -446,8 +466,8 @@ export default async function DashboardPage({
         stakeholderData={stakeholderData}
       />
 
-      {/* 🌟 ส่งข้อมูลแบบ ID-Based ลุยต่อยอดระบบได้เรียบร้อยครับนาย */}
-      <CompanyCandlestickChart data={candlestickData} />
+      {/* กราฟแท่งไล่ระดับสีแยกรายเซลส์แบบสวยๆ ครบถ้วน */}
+      <CompanyCandlestickChart data={candlestickData} salesKeys={chartSalesKeys} />
 
       <div className="grid grid-cols-1 mb-8">
         <VipPipelineTable 
@@ -506,7 +526,6 @@ export default async function DashboardPage({
                     {ci.totalArea.toLocaleString()} <span className="text-xs font-bold text-slate-400 ml-0.5">ตร.ม.</span>
                   </td>
                   <td className="px-5 py-3 text-center">
-                    {/* ✅ ยิงประวัติลงพื้นที่ของเซลส์รายบุคคลตามเงื่อนไขเดิมอย่างถูกต้อง */}
                     <Link 
                       href={`/dashboard/checkins/${ci.userId}`} 
                       className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"

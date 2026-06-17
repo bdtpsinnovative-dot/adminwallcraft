@@ -385,7 +385,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                     const productCategoryName = item?.product_categories?.name || '-';
 
                     return (
-                      <tr key={proj.id || idx} className="hover:bg-slate-50/80 transition-colors group">
+                      <tr key={`${proj.id}-${idx}`} className="hover:bg-slate-50/80 transition-colors group">
                         <td className="px-5 py-4 align-middle">
                           <div className="flex items-center gap-1.5 text-slate-500 font-medium">
                             <CalendarDays size={14} className="text-slate-400" />
@@ -490,7 +490,7 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                   <tr><td colSpan={4} className="text-center py-10 text-slate-400">ไม่มีข้อมูลผลงานเซลส์ครับ</td></tr>
                 ) : (
                   sortedSalesStats.map((stat, idx) => (
-                    <tr key={stat.id || idx} className="hover:bg-indigo-50/30 transition-colors">
+                    <tr key={`${stat.id}-${idx}`} className="hover:bg-indigo-50/30 transition-colors">
                       <td className="px-8 py-5 text-center">
                         <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-black text-sm shadow-sm ${idx === 0 ? 'bg-yellow-400 text-white ring-4 ring-yellow-100' : 'bg-slate-100 text-slate-500'}`}>
                           {idx + 1}
