@@ -27,7 +27,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
     projectTypeId: '',
     categoryId: '',
     queueLevel: '', 
-    projectYear: '2569' // 🌟 ตั้งค่าเริ่มต้นตอน Component โหลด
+    projectYear: '2569'
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -41,7 +41,6 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
         projectTypeId: data.proj.project_type_id || '',
         categoryId: data.item?.product_category_id || '',
         queueLevel: data.proj.queue_level || '', 
-        // 🌟 ไฮไลท์ตรงนี้ครับ: ถ้าไม่มีข้อมูลเดิม ให้โยนเลข 2569 ใส่เข้าไปรอเลย!
         projectYear: data.proj.project_year || '2569' 
       });
     }
@@ -49,10 +48,35 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
 
   if (!isOpen) return null;
 
+  // 🌟 ฟังก์ชันสรุปการเปลี่ยนแปลง
+  const getChangesSummary = (oldData: any, newData: any) => {
+    const changes = [];
+    
+    if ((oldData.projectName || '') !== newData.projectName) 
+      changes.push(`ชื่อโครงการเป็น "${newData.projectName || '-'}"`);
+      
+    if (String(oldData.area || '0') !== String(newData.area || '0')) 
+      changes.push(`พื้นที่เป็น "${newData.area} ตร.ม."`);
+      
+    if (String(oldData.queueLevel || '') !== String(newData.queueLevel || '')) 
+      changes.push(`คิวเป็น "คิวที่ ${newData.queueLevel}"`);
+      
+    if (String(oldData.projectYear || '') !== String(newData.projectYear || '')) 
+      changes.push(`ปีเป็น "${newData.projectYear}"`);
+      
+    if ((oldData.note || '') !== newData.note) {
+      const shortNote = newData.note.length > 20 ? newData.note.substring(0, 20) + '...' : newData.note;
+      changes.push(`คอมเมนต์: "${shortNote}"`);
+    }
+    
+    return changes.length > 0 ? `อัปเดต: ${changes.join(', ')}` : `แอดมินอัปเดตข้อมูลโครงการ ${newData.projectName || 'ไม่ระบุชื่อ'} เรียบร้อยแล้ว`;
+  };
+
   const handleSave = async () => {
     try {
       setIsSaving(true); 
       
+      // 1. บันทึกข้อมูลลงตารางโปรเจกต์
       const projectUpdate = supabase.from('order_item_projects').update({ 
         project_name: formData.projectName.trim() || null,
         project_note: formData.note.trim() || null,
@@ -85,6 +109,79 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
       if (projRes.error) throw projRes.error;
       if (ordRes.error) throw ordRes.error;
       if (itemRes.error) throw itemRes.error;
+
+      // 🌟 2. ระบบแจ้งเตือน (บันทึกลง DB + ยิง FCM)
+      try {
+        const targetUserId = data.order?.user_id; // ไอดีเซลส์
+        const orderId = data.order?.id; // ไอดีออเดอร์เพื่อลิงก์
+
+        if (targetUserId) {
+          const titleMsg = 'มีการอัปเดตข้อมูลโครงการ 🔔';
+          
+          // 🌟 เรียกใช้ฟังก์ชันดึงรายละเอียดการเปลี่ยนแปลง
+          const bodyMsg = getChangesSummary(
+            { 
+              projectName: data.proj.project_name,
+              area: data.proj.area_sqm,
+              queueLevel: data.proj.queue_level,
+              projectYear: data.proj.project_year,
+              note: data.proj.project_note
+            },
+            formData
+          );
+
+          // 2.1 หา ID ของแอดมินที่กำลังกดเซฟ (creator_id)
+          const { data: authData } = await supabase.auth.getUser();
+          const adminId = authData?.user?.id;
+
+          // 2.2 💾 Insert ลงตาราง notifications ตามโครงสร้าง
+          const { error: notifError } = await supabase
+            .from('notifications')
+            .insert({
+              recipient_id: targetUserId,
+              creator_id: adminId || null,
+              title: titleMsg,
+              body: bodyMsg,
+              order_id: orderId || null
+            });
+            
+          if (notifError) console.error("DB Notification Error:", notifError);
+
+          // 2.3 🚀 ดึง FCM Tokens และส่งแจ้งเตือนผ่าน API ตัวกลาง
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('fcm_tokens') 
+            .eq('id', targetUserId)
+            .single();
+
+          const fcmData = profileData?.fcm_tokens; 
+          
+          let fcmTokens: string[] = [];
+          if (fcmData && Array.isArray(fcmData)) {
+            fcmTokens = fcmData.map((item: any) => item.token).filter(Boolean);
+          }
+          
+          if (fcmTokens.length > 0) {
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_id: targetUserId,
+                tokens: fcmTokens, 
+                title: titleMsg,
+                body: bodyMsg,
+                data: {
+                  type: 'project_update',
+                  project_id: data.proj.id,
+                  order_id: orderId
+                }
+              })
+            }).catch(e => console.error("Fetch Local API Error:", e));
+          }
+        }
+      } catch (notifyError) {
+        console.error("Notify Logic Error:", notifyError);
+      }
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
