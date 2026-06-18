@@ -59,7 +59,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
       changes.push(`พื้นที่เป็น "${newData.area} ตร.ม."`);
       
     if (String(oldData.queueLevel || '') !== String(newData.queueLevel || '')) 
-      changes.push(`คิวเป็น "คิวที่ ${newData.queueLevel}"`);
+      changes.push(`quarter "quarter ${newData.queueLevel}"`);
       
     if (String(oldData.projectYear || '') !== String(newData.projectYear || '')) 
       changes.push(`ปีเป็น "${newData.projectYear}"`);
@@ -235,11 +235,11 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">ลำดับคิว (1-4)</label>
                 <select value={formData.queueLevel} onChange={(e) => setFormData({...formData, queueLevel: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 appearance-none bg-amber-50">
-                  <option value="">- ระบุคิว -</option>
-                  <option value="1">คิวที่ 1</option>
-                  <option value="2">คิวที่ 2</option>
-                  <option value="3">คิวที่ 3</option>
-                  <option value="4">คิวที่ 4</option>
+                  <option value="">-quarter-</option>
+                  <option value="1">quarter 1</option>
+                  <option value="2">quarter 2</option>
+                  <option value="3">quarter 3</option>
+                  <option value="4">quarter 4</option>
                 </select>
               </div>
               <div>
@@ -474,9 +474,8 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                   <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[13%]">โน้ตจากเซลส์</th>
                   <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[13%]">คอมเมนต์แอดมิน</th>
                   
-                  {/* 🌟 เพิ่มคิว กับ พ.ศ. */}
-                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[4%] text-center">คิว</th>
-                  <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[5%] text-center">พ.ศ.</th>
+                  {/* 🌟 รวมคิว กับ พ.ศ. */}
+<th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[9%] text-center">Estimateoder</th>
 
                   <th className="px-5 py-4 border-b border-slate-200 bg-slate-50 w-[9%]">ประเภทโครงการ</th>
                   <th className="px-3 py-4 border-b border-slate-200 bg-slate-50 w-[6%]">ประเภทสินค้า</th>
@@ -487,8 +486,8 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {displayProjects.length === 0 ? (
-                  <tr><td colSpan={13} className="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลโครงการตามเงื่อนไขที่เลือกครับ</td></tr>
-                ) : (
+  <tr><td colSpan={12} className="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลโครงการตามเงื่อนไขที่เลือกครับ</td></tr>
+) : (
                   displayProjects.map((proj, idx) => {
                     const item = Array.isArray(proj.order_items) ? proj.order_items[0] : proj.order_items;
                     const order = item?.orders;
@@ -570,21 +569,21 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                           </div>
                         </td>
 
-                        {/* 🌟 7. ลำดับคิว */}
-                        <td className="px-3 py-4 align-middle text-center">
-                          {proj.queue_level ? (
-                            <span className="bg-amber-100 text-amber-700 font-black text-xs px-2.5 py-1 rounded-md shadow-sm border border-amber-200">
-                              Q{proj.queue_level}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-
-                        {/* 🌟 8. ปี พ.ศ. */}
-                        <td className="px-3 py-4 align-middle text-center font-bold text-slate-700 text-sm">
-                          {proj.project_year || '-'}
-                        </td>
+{/* 🌟 ลำดับคิว และ พ.ศ. (ปรับให้ขยับมาใกล้กันมากขึ้นด้วย gap-1.5) */}
+<td className="px-3 py-4 align-middle text-center">
+  <div className="flex items-center justify-center gap-1.5">
+    {proj.queue_level ? (
+      <span className="bg-amber-100 text-amber-700 font-black text-xs px-2.5 py-1 rounded-md shadow-sm border border-amber-200">
+        Q{proj.queue_level}
+      </span>
+    ) : (
+      <span className="text-slate-300">-</span>
+    )}
+    <span className="font-bold text-slate-700 text-sm">
+      {proj.project_year || '-'}
+    </span>
+  </div>
+</td>
 
                         <td className="px-5 py-4 align-middle text-slate-600 text-sm font-medium">
                           {projectTypeName}

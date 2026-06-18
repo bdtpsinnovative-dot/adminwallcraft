@@ -1,24 +1,23 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from 'react'; // 🌟 1. เพิ่ม useTransition
+import React, { useState, useEffect, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronDown, X, Filter, Globe, Clock, CalendarDays, Loader2 } from 'lucide-react'; // 🌟 2. เพิ่ม Loader2
+import { Calendar, ChevronDown, X, Filter, Globe, Clock, CalendarDays, Loader2 } from 'lucide-react';
 
 type Props = {
   salesList: any[];
   projectTypes: any[];
   productCategories: any[];
   teams: any[];
+  customerTypes: any[]; // 🌟 1. เพิ่ม Props สำหรับ Customer Types
 };
 
-export default function DashboardDateFilter({ salesList, projectTypes, productCategories, teams }: Props) {
+export default function DashboardDateFilter({ salesList, projectTypes, productCategories, teams, customerTypes }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // 🌟 3. ประกาศใช้งาน useTransition สำหรับจับสถานะการโหลดของ Next.js
   const [isPending, startTransition] = useTransition();
 
-  // --- คำนวณวันที่อ้างอิง ---
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const thirtyDaysAgoDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -28,7 +27,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   const allTimeStart = '2020-01-01';
   const allTimeEnd = '2030-12-31';
 
-  // --- ดึงค่าจาก URL ---
   const urlStart = searchParams.get('start') || thirtyDaysAgoStr; 
   const urlEnd = searchParams.get('end') || todayStr;
   
@@ -37,6 +35,8 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   const currentProductCategory = searchParams.get('productCategory') || 'ALL';
   const currentSource = searchParams.get('source') || 'ALL';
   const currentTeam = searchParams.get('team') || 'ALL';
+  // 🌟 2. ดึงค่า Customer Type จาก URL
+  const currentCustomerType = searchParams.get('customerType') || 'ALL'; 
   const currentMinArea = searchParams.get('minArea') || '';
   const currentMaxArea = searchParams.get('maxArea') || '';
 
@@ -59,7 +59,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
     activePreset = 'ALL_TIME';
   }
 
-  // 🌟 4. เอา startTransition() มาครอบ router.push() ทุกจุด เพื่อเปิดใช้งาน Loading
   const applyPreset = (preset: '30DAYS' | 'THIS_MONTH' | 'ALL_TIME') => {
     const params = new URLSearchParams(searchParams.toString());
     
@@ -124,13 +123,13 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
     currentTeam !== 'ALL' || 
     currentProjectType !== 'ALL' || 
     currentProductCategory !== 'ALL' || 
+    currentCustomerType !== 'ALL' || // 🌟 3. เช็กสถานะการกรองของ Customer Type
     currentSource !== 'ALL' || 
     currentMinArea || 
     currentMaxArea;
 
   return (
     <>
-      {/* 🌟 5. หน้าต่าง Loading สุดพรีเมียม จะเด้งขึ้นมาเมื่อ isPending เป็น true เท่านั้น */}
       {isPending && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 transform transition-all scale-100">
@@ -143,7 +142,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         </div>
       )}
 
-      {/* โครงสร้างปุ่มกรองข้อมูลเดิม */}
       <div className="flex flex-wrap items-center gap-2">
         <Filter size={16} className="text-slate-400 hidden lg:block mr-1" />
 
@@ -211,6 +209,21 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
           <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
         </div>
 
+        {/* 🌟 4. เพิ่ม Dropdown ประเภทลูกค้า (Customer Type) */}
+        <div className="relative">
+          <select 
+            disabled={isPending}
+            className={`appearance-none border rounded-lg px-3 py-1.5 pr-8 text-xs font-medium outline-none transition-colors cursor-pointer shadow-sm disabled:opacity-50
+              ${currentCustomerType !== 'ALL' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-300'}`}
+            value={currentCustomerType} 
+            onChange={(e) => applyFilter('customerType', e.target.value)}
+          >
+            <option value="ALL">ประเภทลูกค้า</option>
+            {customerTypes?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
+        </div>
+
         <div className="relative">
           <select 
             disabled={isPending}
@@ -247,7 +260,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
             value={currentProjectType} 
             onChange={(e) => applyFilter('projectType', e.target.value)}
           >
-            <option value="ALL">🏢 ประเภท: ทั้งหมด</option>
+            <option value="ALL">🏢 ประเภทงาน: ทั้งหมด</option>
             {projectTypes?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />

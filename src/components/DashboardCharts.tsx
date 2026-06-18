@@ -3,12 +3,9 @@
 import React from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as LineTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Tooltip as PieTooltip, Legend,
-  BarChart, Bar, LabelList
+  BarChart, Bar, Cell, LabelList
 } from 'recharts';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b'];
-// 🟢 ชุดสีสำหรับประเภทโปรเจกต์
 const PROJECT_TYPE_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#14b8a6', '#f43f5e', '#6366f1', '#84cc16', '#64748b']; 
 const INTEREST_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#3b82f6', '#94a3b8', '#cbd5e1']; 
 
@@ -31,10 +28,24 @@ export default function DashboardCharts({
   interestData = [], 
   stakeholderData = [] 
 }: DashboardChartsProps) {
+
+  // 🟢 อัปเดตการกรองข้อมูล: ดักถอนรากถอนโคนคำว่า "ไม่ระบุประเภท" และค่าว่างทุกรูปแบบ
+  const filteredProjectTypeData = projectTypeData.filter((item) => {
+    if (!item || !item.name) return false;
+    const name = item.name.trim();
+    return (
+      name !== "ไม่ระบุประเภท" && 
+      name !== "ไม่ระบุ" && 
+      name !== "Unspecified" && 
+      name !== "Unknown" && 
+      name !== ""
+    );
+  });
+
   return (
     <div className="flex flex-col gap-6 mb-8">
       
-      {/* --- แถวที่ 1: กราฟเทรนด์ และ ประเภทโปรเจกต์ (ปรับเป็นแท่งแนวนอน) --- */}
+      {/* --- แถวที่ 1: กราฟเทรนด์ และ ประเภทโปรเจกต์ --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">เทรนด์การสร้างโปรเจกต์รายวัน (Daily Activity)</h3>
@@ -51,14 +62,14 @@ export default function DashboardCharts({
           </div>
         </div>
 
-        {/* 🟢 แก้ไข: เปลี่ยนจาก Pie เป็น Horizontal Bar Chart เพื่อให้อ่านง่ายขึ้น */}
+        {/* 🟢 ใช้ข้อมูลที่ผ่านการกรองก้อน "ไม่ระบุประเภท" ออกเรียบร้อยแล้ว */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">สัดส่วนประเภทโปรเจกต์ (Project Types)</h3>
-          <p className="text-xs text-slate-500 mb-4">จัดลำดับประเภทโครงการที่พบมากที่สุด</p>
+          <p className="text-xs text-slate-500 mb-4">จัดลำดับประเภทโครงการที่พบมากที่สุด (ไม่รวมไม่ระบุประเภท)</p>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
-                data={projectTypeData} 
+                data={filteredProjectTypeData} 
                 layout="vertical" 
                 margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
               >
@@ -77,10 +88,9 @@ export default function DashboardCharts({
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
                 />
                 <Bar dataKey="value" name="จำนวน" radius={[0, 4, 4, 0]} barSize={18}>
-                  {projectTypeData.map((entry, index) => (
+                  {filteredProjectTypeData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={PROJECT_TYPE_COLORS[index % PROJECT_TYPE_COLORS.length]} />
                   ))}
-                  {/* แสดงสัดส่วน % ไว้ท้ายแท่ง */}
                   <LabelList dataKey="value" position="right" style={{ fontSize: '10px', fill: '#64748b', fontWeight: 'bold' }} />
                 </Bar>
               </BarChart>
@@ -126,7 +136,7 @@ export default function DashboardCharts({
         </div>
       </div>
 
-      {/* --- แถวที่ 3: กราฟแท่งผลงานรายบุคคล (ชื่อเอียงแกน X - โชว์ตัวเลขยอด) --- */}
+      {/* --- แถวที่ 3: กราฟแท่งผลงานรายบุคคล --- */}
       <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
         <h3 className="font-bold text-slate-800 mb-1">วิเคราะห์ประสิทธิภาพรายบุคคล (Individual Performance)</h3>
         <p className="text-xs text-slate-500 mb-4">แสดงผลงานของเซลส์ทุกคน (เลื่อนซ้าย-ขวาเพื่อดูทั้งหมด)</p>
@@ -136,7 +146,6 @@ export default function DashboardCharts({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                
                 <XAxis 
                   dataKey="name" 
                   angle={-45} 
@@ -147,14 +156,11 @@ export default function DashboardCharts({
                   height={120} 
                   interval={0} 
                 />
-                
                 <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                
                 <LineTooltip 
                   cursor={{fill: '#f8fafc'}} 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
                 />
-                
                 <Bar dataKey="projects" name="จำนวนโปรเจกต์ (งาน)" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={32}>
                   <LabelList 
                     dataKey="projects" 

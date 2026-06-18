@@ -41,15 +41,17 @@ function ProjectReportsContent() {
   const [projectTypes, setProjectTypes]     = useState<any[]>([]);
   const [productCategories, setProductCats] = useState<any[]>([]);
   const [teams, setTeams]                   = useState<any[]>([]);
+  const [customerTypes, setCustomerTypes]   = useState<any[]>([]); // 🌟 1. เพิ่ม State เก็บกลุ่มประเภทลูกค้า
 
   // ── Fetch filter-option lists once ────────────────────────────────────────
   useEffect(() => {
     const fetchLists = async () => {
-      const [profRes, ptRes, pcRes, teamRes] = await Promise.all([
+      const [profRes, ptRes, pcRes, teamRes, ctRes] = await Promise.all([
         supabase.from('profiles').select('id, full_name').order('full_name'),
         supabase.from('project_types').select('id, name'),
         supabase.from('product_categories').select('id, name'),
         supabase.from('teams').select('id, team_name'),
+        supabase.from('customer_types').select('id, name'), // 🌟 2. ดึงข้อมูล customer_types เพิ่มเติม
       ]);
       // Add special NO_USER option at top of sales list
       setSalesList([
@@ -59,6 +61,7 @@ function ProjectReportsContent() {
       setProjectTypes(ptRes.data || []);
       setProductCats(pcRes.data || []);
       setTeams(teamRes.data || []);
+      setCustomerTypes(ctRes.data || []); // 🌟 3. จ่ายเข้า State หน้าบ้าน
     };
     fetchLists();
   }, []);
@@ -362,6 +365,7 @@ function ProjectReportsContent() {
               projectTypes={projectTypes}
               productCategories={productCategories}
               teams={teams}
+              customerTypes={customerTypes} // 🌟 4. จ่าย Props ตัวที่ขาดไปให้เรียบร้อย บั๊กหายทันทีครับ!
             />
           </div>
         </div>
@@ -387,7 +391,7 @@ function ProjectReportsContent() {
                   <th className="px-6 py-6 text-center text-rose-500">Inactive</th>
                   <th className="px-8 py-6 text-center">Active %</th>
                   <th className="px-8 py-6 text-center">Inactive %</th>
-                  <th className="px-8 py-6 text-right text-indigo-600">Projects</th>
+                  <th className="px-8 py-6 text-center">Projects</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -496,9 +500,9 @@ function ProjectReportsContent() {
           {/* Tab buttons */}
           <div className="flex gap-2 px-8 pt-6 pb-2">
             {([
-              { key: 'all',     label: 'ทั้งหมด',              count: projectList.length,      color: 'emerald' },
+              { key: 'all',     label: 'ทั้งหมด',               count: projectList.length,      color: 'emerald' },
               { key: 'top',     label: '🏆 Top ใช้มากสุด',     count: topProjectsData.length,  color: 'indigo'  },
-              { key: 'no_user', label: '⚠️ ไม่มีผู้รับผิดชอบ', count: noUserProjects.length,   color: 'rose'    },
+              { key: 'no_user', label: '⚠️ ไม่มีผู้รับผิดชอบ', count: noUserProjects.length,    color: 'rose'    },
             ] as const).map(tab => (
               <button
                 key={tab.key}

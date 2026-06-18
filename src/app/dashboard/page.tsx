@@ -2,7 +2,7 @@
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
-  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Database, MapPin, Building2
+  Calendar, Users, Map, Activity, AlertCircle, Star, Target, Database, MapPin, Building2, Scaling
 } from 'lucide-react';
 import VipPipelineTable from '@/components/VipPipelineTable';
 import DashboardCharts from '@/components/DashboardCharts';
@@ -21,12 +21,12 @@ export default async function DashboardPage({
   searchParams: {
     start?: string; end?: string; range?: string;
     sales?: string; projectType?: string; productCategory?: string;
+    customerType?: string; 
     minArea?: string; maxArea?: string; source?: string; team?: string;
   };
 }) {
   const params = await Promise.resolve(searchParams);
 
-  // 🚀 1. สั่งดึง Master Data คู่ขนานทิ้งไว้เบื้องหลังทันทีเพื่อความเร็วระดับแสง
   const masterDataPromise = Promise.all([
     supabase.from('profiles').select('id, full_name, team_id'),
     supabase.from('project_types').select('id, name'),
@@ -35,7 +35,6 @@ export default async function DashboardPage({
     supabase.from('customer_types').select('id, name')
   ]);
 
-  // 🌟 2. ดึงข้อมูลผู้ใช้ปัจจุบัน (Current User) แบบ Server Component
   const cookieStore = await cookies();
   const token = cookieStore.get('admin_token')?.value;
   let user = null;
@@ -60,7 +59,6 @@ export default async function DashboardPage({
     }
   }
 
-  // 🚀 3. แกะกล่องรับข้อมูล Master Data ที่ดึงรอนานแล้ว
   const [
     { data: profiles },
     { data: projectTypes },
@@ -75,7 +73,6 @@ export default async function DashboardPage({
   const projectTypeMap: Record<string, string> = {};
   projectTypes?.forEach(pt => { projectTypeMap[pt.id] = pt.name; });
 
-  // --- 4. จัดการตัวแปร Filter และคำนวณย้อนหลัง 30 วัน (Trailing 30 Days) ---
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   thirtyDaysAgo.setHours(0, 0, 0, 0); 
@@ -95,6 +92,7 @@ export default async function DashboardPage({
   const filterProjectType = params?.projectType || 'ALL';
   const filterProductCategory = params?.productCategory || 'ALL';
   const filterSource = params?.source || 'ALL';
+  const filterCustomerType = params?.customerType || 'ALL'; 
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
@@ -110,7 +108,7 @@ const buildBaseQuery = () => {
           id, note, interest_level, images, product_category_id,
           product_categories (name), 
           orders!inner (
-            id, customer_name, phone, user_id, team_id, is_synced, audit_log, source,
+            id, customer_name, phone, user_id, team_id, is_synced, audit_log, source, customer_type_id,
             companies (id, name) 
           )
         )
@@ -124,6 +122,8 @@ const buildBaseQuery = () => {
     if (filterProductCategory !== 'ALL') q = q.eq('order_items.product_category_id', filterProductCategory);
     if (filterSales !== 'ALL') q = q.eq('order_items.orders.user_id', filterSales);
     if (filterTeam !== 'ALL') q = q.eq('order_items.orders.team_id', filterTeam);
+    
+    if (filterCustomerType !== 'ALL') q = q.eq('order_items.orders.customer_type_id', filterCustomerType);
 
     if (filterSource === 'APP') {
       q = q.not('order_items.orders.audit_log', 'is', null);
@@ -134,7 +134,6 @@ const buildBaseQuery = () => {
     return q;
   };
 
-  // 🌟 ยิงรอบแรกเบาๆ เพื่อขอจำนวนข้อมูลทั้งหมดจริง (เอาแค่ Count มาคำนวณหน้า)
   const { count: totalCount, error: countError } = await buildBaseQuery()
     .order('created_at', { ascending: false })
     .range(0, 0);
@@ -150,7 +149,6 @@ const buildBaseQuery = () => {
     const PAGE_SIZE = 1000;
     const promises = [];
     
-    // 🌟 สร้างใบงานยิงพร้อมกันขนานไปหา Supabase โดยเรียก buildBaseQuery() ใหม่ทุกรอบ!
     for (let offset = 0; offset < total; offset += PAGE_SIZE) {
       promises.push(
         buildBaseQuery() 
@@ -159,17 +157,14 @@ const buildBaseQuery = () => {
       );
     }
     
-    // 💥 ยิงตู้มเดียวพร้อมกันแบบคู่ขนาน!
     const results = await Promise.all(promises);
     
-    // รวมร่างข้อมูลจากทุก Request เข้าด้วยกัน
     results.forEach(({ data, error }) => {
       if (error) console.error("Parallel Fetch Segment Error:", error.message);
       if (data) allActiveProjects = [...allActiveProjects, ...data];
     });
   }
 
-  // --- 6. รวบรวมข้อมูลดิบแยกตามรายชื่อเซลส์เพื่อส่งให้กราฟแท่งไล่ระดับสี (Gradient Stacked) ---
   const companyStats: Record<string, { id: string, name: string, count: number, salesBreakdown: Record<string, number> }> = {};
   const uniqueSalesNamesForChart = new Set<string>();
 
@@ -212,7 +207,6 @@ const buildBaseQuery = () => {
 
   const chartSalesKeys = Array.from(uniqueSalesNamesForChart);
 
-  // คำนวณยอดสรุปหน้าหลัก
   const activeProjectsCount = allActiveProjects.length; 
   const totalAreaSqm = allActiveProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
   
@@ -246,8 +240,11 @@ const buildBaseQuery = () => {
 
     const pTypeId = proj.project_type_id;
     const typeName = pTypeId && projectTypeMap[pTypeId] ? projectTypeMap[pTypeId] : 'ไม่ระบุประเภท';
-    if (!projectTypeCountMap[typeName]) projectTypeCountMap[typeName] = 0;
-    projectTypeCountMap[typeName]++;
+    
+    if (typeName !== 'ไม่ระบุประเภท' && typeName !== 'ไม่ระบุ' && typeName !== 'Unspecified' && typeName !== 'Unknown' && typeName !== '') {
+        if (!projectTypeCountMap[typeName]) projectTypeCountMap[typeName] = 0;
+        projectTypeCountMap[typeName]++;
+    }
 
     const interest = orderItem?.interest_level || '';
     if (interest.includes('สนใจมาก (มีโครงการ')) intVeryHigh++;
@@ -295,14 +292,17 @@ const buildBaseQuery = () => {
 
   const lineChartData = Object.values(dailyCountMap).sort((a, b) => a.timestamp - b.timestamp).slice(-14).map(i => ({ date: i.date, count: i.count }));
   
-  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
+  const totalSpecifiedProjectsCount = Object.values(projectTypeCountMap).reduce((sum, count) => sum + count, 0);
+  const projDividerForTypes = totalSpecifiedProjectsCount > 0 ? totalSpecifiedProjectsCount : 1;
+
   const projectTypeChartData = Object.entries(projectTypeCountMap)
     .map(([name, count]) => ({
-      name: `${name} (${Math.round((count / projDivider) * 100)}%)`,
+      name: `${name} (${Math.round((count / projDividerForTypes) * 100)}%)`,
       value: count
     }))
     .sort((a, b) => b.value - a.value);
 
+  const projDivider = activeProjectsCount > 0 ? activeProjectsCount : 1;
   const interestData = [
     { name: 'สนใจมาก (มีโครงการ)', value: intVeryHigh },
     { name: 'สนใจมาก (ยังไม่มี)', value: intHigh },
@@ -389,7 +389,7 @@ const buildBaseQuery = () => {
   return (
     <main className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
       
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4 w-full">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4 w-full">
         <div className="flex-none">
           <div className="flex items-center gap-2 text-indigo-700 mb-1">
             <LayoutDashboard size={28} className="stroke-[2.5]" />
@@ -406,10 +406,82 @@ const buildBaseQuery = () => {
             projectTypes={projectTypes || []}
             productCategories={productCategories || []}
             teams={visibleTeams}
+            customerTypes={customerTypes || []} 
           />
         </div>
       </div>
 
+{/* 🌟 ชุดปุ่ม SIZE ทั้ง 7 ดีไซน์ใหญ่ พรีเมียม คลีนๆ สวยสะใจ 🌟 */}
+      <div className="mb-8 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2.5 mb-4">
+          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+            <Scaling size={20} className="stroke-[2.5]" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-slate-800 tracking-tight">กรองด่วนตามขนาดพื้นที่ (Area Size)</h3>
+            <p className="text-xs text-slate-400 font-medium">คลิกเลือกกลุ่มขนาดพื้นที่เพื่อเจาะลึกโปรเจกต์ที่ต้องการ</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3.5">
+          {[
+            { id: '0', label: '0 ตร.ม.', min: '0', max: '0', subtitle: 'ไม่มีพื้นที่' },
+            { id: 'XS', label: 'XS', min: '1', max: '30', subtitle: 'ต่ำกว่า 30 ตร.ม.' },
+            { id: 'S', label: 'S', min: '31', max: '100', subtitle: '31 - 100 ตร.ม.' },
+            { id: 'M', label: 'M', min: '101', max: '300', subtitle: '101 - 300 ตร.ม.' },
+            { id: 'L', label: 'L', min: '301', max: '500', subtitle: '301 - 500 ตร.ม.' },
+            { id: 'XL', label: 'XL', min: '501', max: '1000', subtitle: '501 - 1,000 ตร.ม.' },
+            { id: 'XXL', label: 'XXL', min: '1001', max: '', subtitle: 'มากกว่า 1,000 ตร.ม.' },
+          ].map((btn) => {
+            const isActive = minArea === btn.min && maxArea === btn.max;
+            
+            // ฟังก์ชันผูก URL สำหรับปุ่มกด (ไม่ต้องใช้ onClick)
+            const q = new URLSearchParams();
+            if (params) {
+              Object.entries(params).forEach(([k, v]) => {
+                if (v && typeof v === 'string') q.set(k, v);
+              });
+            }
+            if (isActive) {
+              q.delete('minArea');
+              q.delete('maxArea');
+            } else {
+              if (btn.min) q.set('minArea', btn.min); else q.delete('minArea');
+              if (btn.max) q.set('maxArea', btn.max); else q.delete('maxArea');
+            }
+            const href = `?${q.toString()}`;
+
+            return (
+              <Link
+                key={btn.id}
+                href={href}
+                className={`flex flex-col items-center justify-center py-4 px-3 rounded-xl border transition-all duration-200 group relative overflow-hidden ${
+                  isActive 
+                    ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 border-indigo-600 text-white shadow-md shadow-indigo-200 ring-2 ring-indigo-600 ring-offset-2 ring-offset-white scale-[1.03] z-10' 
+                    : 'bg-slate-50/50 border-slate-200 text-slate-700 hover:bg-white hover:border-indigo-500 hover:shadow-md hover:shadow-slate-100'
+                }`}
+              >
+                {/* แถบสีเอฟเฟกต์บางๆ ตอน Hover ปุ่มธรรมดา */}
+                {!isActive && (
+                  <span className="absolute inset-x-0 bottom-0 h-1 bg-indigo-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-200" />
+                )}
+
+                <span className={`font-black text-xl md:text-2xl leading-tight mb-0.5 tracking-tight ${
+                  isActive ? 'text-white' : 'text-slate-800 group-hover:text-indigo-600 transition-colors'
+                }`}>
+                  {btn.label}
+                </span>
+                <span className={`text-[11px] font-bold text-center leading-normal ${
+                  isActive ? 'text-indigo-100' : 'text-slate-400 group-hover:text-slate-500 transition-colors'
+                }`}>
+                  {btn.subtitle}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+      {/* กล่องตัวเลข 4 กล่อง (ของเดิม) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="flex justify-between items-start">
