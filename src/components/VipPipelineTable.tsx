@@ -233,13 +233,13 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
             
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">ลำดับคิว (1-4)</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">quarter</label>
                 <select value={formData.queueLevel} onChange={(e) => setFormData({...formData, queueLevel: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 appearance-none bg-amber-50">
-                  <option value="">-quarter-</option>
-                  <option value="1">quarter 1</option>
-                  <option value="2">quarter 2</option>
-                  <option value="3">quarter 3</option>
-                  <option value="4">quarter 4</option>
+                  <option value="">Q</option>
+                  <option value="1">Q 1</option>
+                  <option value="2">Q 2</option>
+                  <option value="3">Q 3</option>
+                  <option value="4">Q 4</option>
                 </select>
               </div>
               <div>

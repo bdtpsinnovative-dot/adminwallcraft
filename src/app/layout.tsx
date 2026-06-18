@@ -44,18 +44,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   // 🛡️ 1. เช็คว่าเป็นหน้า Public หรือไม่
   const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog');
-
-  // 🚷 🌟 ระบบป้องกันหลังบ้านเวอร์ชันอัปเดต:
-  // อนุญาตให้พนักงาน (role === 'user') เข้าได้เฉพาะหน้า /dashboard และ /dashboard/checkins/[userId] เท่านั้น
-  useEffect(() => {
-    if (!isPublicPage && userRole === 'user') {
-      const isDashboardZone = pathname === '/dashboard' || pathname.startsWith('/dashboard/checkins/');
-      
-      if (!isDashboardZone) {
-        router.push('/dashboard');
-      }
+// 🚷 🌟 ระบบป้องกันหลังบ้านเวอร์ชันอัปเดต (แก้ไขปลดล็อกหน้าบริษัท)
+useEffect(() => {
+  if (!isPublicPage && userRole === 'user') {
+    // 🟢 อัปเดตเพิ่มเงื่อนไขเช็กหน้า /dashboard/companies/ ต่อท้ายเข้าไปตรงนี้ครับ
+    const isDashboardZone = 
+      pathname === '/dashboard' || 
+      pathname.startsWith('/dashboard/checkins/') ||
+      pathname.startsWith('/dashboard/companies/'); 
+    
+    if (!isDashboardZone) {
+      router.push('/dashboard');
     }
-  }, [userRole, pathname, isPublicPage, router]);
+  }
+}, [userRole, pathname, isPublicPage, router]);
 
   // 📝 รายการเมนู
   const menuGroups = [
