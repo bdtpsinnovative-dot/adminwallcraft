@@ -96,7 +96,7 @@ export default async function DashboardPage({
   const minArea = params?.minArea || '';
   const maxArea = params?.maxArea || '';
 
-const buildBaseQuery = () => {
+  const buildBaseQueryWithoutArea = () => {
     let q = supabase
       .from('order_item_projects')
       .select(`
@@ -116,13 +116,11 @@ const buildBaseQuery = () => {
       .or('is_deleted.eq.false,is_deleted.is.null')
       .gte('created_at', startIso)
       .lte('created_at', endIso);
-    if (minArea) q = q.gte('area_sqm', minArea);
-    if (maxArea) q = q.lte('area_sqm', maxArea);
+    
     if (filterProjectType !== 'ALL') q = q.eq('project_type_id', filterProjectType);
     if (filterProductCategory !== 'ALL') q = q.eq('order_items.product_category_id', filterProductCategory);
     if (filterSales !== 'ALL') q = q.eq('order_items.orders.user_id', filterSales);
     if (filterTeam !== 'ALL') q = q.eq('order_items.orders.team_id', filterTeam);
-    
     if (filterCustomerType !== 'ALL') q = q.eq('order_items.orders.customer_type_id', filterCustomerType);
 
     if (filterSource === 'APP') {
@@ -134,36 +132,39 @@ const buildBaseQuery = () => {
     return q;
   };
 
-  const { count: totalCount, error: countError } = await buildBaseQuery()
-    .order('created_at', { ascending: false })
-    .range(0, 0);
-
-  if (countError) {
-    console.error("Fetch Count Error:", countError.message);
-  }
-
-  let allActiveProjects: any[] = [];
-  const total = totalCount || 0;
-
-  if (total > 0) {
+  const { count: rawTotalCount, error: rawCountError } = await buildBaseQueryWithoutArea().range(0, 0);
+  let allRawProjects: any[] = [];
+  
+  if (rawTotalCount && rawTotalCount > 0) {
     const PAGE_SIZE = 1000;
     const promises = [];
-    
-    for (let offset = 0; offset < total; offset += PAGE_SIZE) {
-      promises.push(
-        buildBaseQuery() 
-          .order('created_at', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1)
-      );
+    for (let offset = 0; offset < rawTotalCount; offset += PAGE_SIZE) {
+      promises.push(buildBaseQueryWithoutArea().order('created_at', { ascending: false }).range(offset, offset + PAGE_SIZE - 1));
     }
-    
     const results = await Promise.all(promises);
-    
-    results.forEach(({ data, error }) => {
-      if (error) console.error("Parallel Fetch Segment Error:", error.message);
-      if (data) allActiveProjects = [...allActiveProjects, ...data];
+    results.forEach(({ data }) => {
+      if (data) allRawProjects = [...allRawProjects, ...data];
     });
   }
+
+  const areaCounts = { ZERO: 0, XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
+  allRawProjects.forEach(p => {
+    const a = Number(p.area_sqm) || 0;
+    if (a === 0) areaCounts.ZERO++;
+    else if (a <= 30) areaCounts.XS++;
+    else if (a <= 100) areaCounts.S++;
+    else if (a <= 300) areaCounts.M++;
+    else if (a <= 500) areaCounts.L++;
+    else if (a <= 1000) areaCounts.XL++;
+    else areaCounts.XXL++;
+  });
+
+  const allActiveProjects = allRawProjects.filter(p => {
+    const a = Number(p.area_sqm) || 0;
+    if (minArea && a < Number(minArea)) return false;
+    if (maxArea && a > Number(maxArea)) return false;
+    return true;
+  });
 
   const companyStats: Record<string, { id: string, name: string, count: number, salesBreakdown: Record<string, number> }> = {};
   const uniqueSalesNamesForChart = new Set<string>();
@@ -180,33 +181,19 @@ const buildBaseQuery = () => {
 
     if (company && company.name && company.id) {
       const cName = company.name;
-      
-      if (!companyStats[cName]) {
-        companyStats[cName] = { id: company.id, name: cName, count: 0, salesBreakdown: {} };
-      }
-      
+      if (!companyStats[cName]) companyStats[cName] = { id: company.id, name: cName, count: 0, salesBreakdown: {} };
       companyStats[cName].count += 1; 
-      
-      if (!companyStats[cName].salesBreakdown[salesName]) {
-        companyStats[cName].salesBreakdown[salesName] = 0;
-      }
+      if (!companyStats[cName].salesBreakdown[salesName]) companyStats[cName].salesBreakdown[salesName] = 0;
       companyStats[cName].salesBreakdown[salesName] += 1;
-      
       uniqueSalesNamesForChart.add(salesName);
     }
   });
 
   const candlestickData = Object.values(companyStats)
-    .map(comp => ({
-      id: comp.id,
-      name: comp.name,
-      count: comp.count, 
-      ...comp.salesBreakdown 
-    }))
+    .map(comp => ({ id: comp.id, name: comp.name, count: comp.count, ...comp.salesBreakdown }))
     .sort((a, b) => b.count - a.count);
 
   const chartSalesKeys = Array.from(uniqueSalesNamesForChart);
-
   const activeProjectsCount = allActiveProjects.length; 
   const totalAreaSqm = allActiveProjects.reduce((sum, proj) => sum + (Number(proj.area_sqm) || 0), 0);
   
@@ -406,36 +393,37 @@ const buildBaseQuery = () => {
             projectTypes={projectTypes || []}
             productCategories={productCategories || []}
             teams={visibleTeams}
-            customerTypes={customerTypes || []} 
+            customerTypes={customerTypes || []}
+            areaCounts={areaCounts}
           />
         </div>
       </div>
 
-{/* 🌟 ชุดปุ่ม SIZE ทั้ง 7 ดีไซน์ใหญ่ พรีเมียม คลีนๆ สวยสะใจ 🌟 */}
+      {/* 🌟 ชุดปุ่ม SIZE ทั้ง 7 ปรับโฉมใหม่: ตัวเลขตรงกลาง และชื่อไซส์อยู่ล่างนำหน้าช่วง ตร.ม. 🌟 */}
       <div className="mb-8 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2.5 mb-4">
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
             <Scaling size={20} className="stroke-[2.5]" />
           </div>
           <div>
-            <h3 className="text-base font-black text-slate-800 tracking-tight">กรองด่วนตามขนาดพื้นที่ (Area Size)</h3>
-            <p className="text-xs text-slate-400 font-medium">คลิกเลือกกลุ่มขนาดพื้นที่เพื่อเจาะลึกโปรเจกต์ที่ต้องการ</p>
+            <h3 className="text-base font-black text-slate-800 tracking-tight">ขนาดโปรเจ็ก SQM</h3>
+        
           </div>
         </div>
         
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3.5">
           {[
-            { id: '0', label: '0 ตร.ม.', min: '0', max: '0', subtitle: 'ไม่มีพื้นที่' },
-            { id: 'XS', label: 'XS', min: '1', max: '30', subtitle: 'ต่ำกว่า 30 ตร.ม.' },
-            { id: 'S', label: 'S', min: '31', max: '100', subtitle: '31 - 100 ตร.ม.' },
-            { id: 'M', label: 'M', min: '101', max: '300', subtitle: '101 - 300 ตร.ม.' },
-            { id: 'L', label: 'L', min: '301', max: '500', subtitle: '301 - 500 ตร.ม.' },
-            { id: 'XL', label: 'XL', min: '501', max: '1000', subtitle: '501 - 1,000 ตร.ม.' },
-            { id: 'XXL', label: 'XXL', min: '1001', max: '', subtitle: 'มากกว่า 1,000 ตร.ม.' },
+            { id: 'ZERO', label: '0 sqm.', min: '0', max: '0', subtitle: 'ไม่มีพื้นที่' },
+            { id: 'XS', label: 'XS', min: '1', max: '30', subtitle: 'ต่ำกว่า 30 sqm' },
+            { id: 'S', label: 'S', min: '31', max: '100', subtitle: '31 - 100 sqm.' },
+            { id: 'M', label: 'M', min: '101', max: '300', subtitle: '101 - 300 sqm.' },
+            { id: 'L', label: 'L', min: '301', max: '500', subtitle: '301 - 500 sqm.' },
+            { id: 'XL', label: 'XL', min: '501', max: '1000', subtitle: '501 - 1,000 sqm.' },
+            { id: 'XXL', label: 'XXL', min: '1001', max: '', subtitle: 'มากกว่า 1,000 sqm.' },
           ].map((btn) => {
             const isActive = minArea === btn.min && maxArea === btn.max;
+            const projectCount = areaCounts[btn.id as keyof typeof areaCounts] || 0;
             
-            // ฟังก์ชันผูก URL สำหรับปุ่มกด (ไม่ต้องใช้ onClick)
             const q = new URLSearchParams();
             if (params) {
               Object.entries(params).forEach(([k, v]) => {
@@ -455,32 +443,35 @@ const buildBaseQuery = () => {
               <Link
                 key={btn.id}
                 href={href}
-                className={`flex flex-col items-center justify-center py-4 px-3 rounded-xl border transition-all duration-200 group relative overflow-hidden ${
+                className={`flex flex-col items-center justify-center py-4 px-3 rounded-xl border transition-all duration-200 group relative overflow-hidden min-h-[105px] ${
                   isActive 
                     ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 border-indigo-600 text-white shadow-md shadow-indigo-200 ring-2 ring-indigo-600 ring-offset-2 ring-offset-white scale-[1.03] z-10' 
                     : 'bg-slate-50/50 border-slate-200 text-slate-700 hover:bg-white hover:border-indigo-500 hover:shadow-md hover:shadow-slate-100'
                 }`}
               >
-                {/* แถบสีเอฟเฟกต์บางๆ ตอน Hover ปุ่มธรรมดา */}
                 {!isActive && (
                   <span className="absolute inset-x-0 bottom-0 h-1 bg-indigo-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-200" />
                 )}
 
-                <span className={`font-black text-xl md:text-2xl leading-tight mb-0.5 tracking-tight ${
+                {/* 🟢 ตรงกลาง: แสดงจำนวนโปรเจกต์รวมเป็นตัวเลขตัวใหญ่พรีเมียม */}
+                <span className={`font-black text-3xl md:text-4xl tracking-tight mb-1.5 ${
                   isActive ? 'text-white' : 'text-slate-800 group-hover:text-indigo-600 transition-colors'
                 }`}>
-                  {btn.label}
+                  {projectCount}
                 </span>
+
+                {/* 🟢 ด้านล่าง: เอาอักษรย่อไซส์มาตั้งนำหน้าช่วงพื้นที่ ตร.ม. */}
                 <span className={`text-[11px] font-bold text-center leading-normal ${
                   isActive ? 'text-indigo-100' : 'text-slate-400 group-hover:text-slate-500 transition-colors'
                 }`}>
-                  {btn.subtitle}
+                  {btn.id === 'ZERO' ? btn.label : `${btn.label} (${btn.subtitle})`}
                 </span>
               </Link>
             )
           })}
         </div>
       </div>
+
       {/* กล่องตัวเลข 4 กล่อง (ของเดิม) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">

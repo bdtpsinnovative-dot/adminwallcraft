@@ -2,17 +2,19 @@
 
 import React, { useState, useEffect, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronDown, X, Filter, Globe, Clock, CalendarDays, Loader2 } from 'lucide-react';
+import { Calendar, ChevronDown, X, Filter, Globe, Clock, CalendarDays, Loader2, Scaling } from 'lucide-react';
 
 type Props = {
   salesList: any[];
   projectTypes: any[];
   productCategories: any[];
   teams: any[];
-  customerTypes: any[]; // 🌟 1. เพิ่ม Props สำหรับ Customer Types
+  customerTypes: any[];
+  // 🌟 เพิ่ม Props สำหรับรับตัวเลขจำนวนโปรเจกต์แยกตามไซส์
+  areaCounts?: Record<string, number>; 
 };
 
-export default function DashboardDateFilter({ salesList, projectTypes, productCategories, teams, customerTypes }: Props) {
+export default function DashboardDateFilter({ salesList, projectTypes, productCategories, teams, customerTypes, areaCounts = {} }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -35,7 +37,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   const currentProductCategory = searchParams.get('productCategory') || 'ALL';
   const currentSource = searchParams.get('source') || 'ALL';
   const currentTeam = searchParams.get('team') || 'ALL';
-  // 🌟 2. ดึงค่า Customer Type จาก URL
   const currentCustomerType = searchParams.get('customerType') || 'ALL'; 
   const currentMinArea = searchParams.get('minArea') || '';
   const currentMaxArea = searchParams.get('maxArea') || '';
@@ -48,7 +49,9 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   useEffect(() => {
     setStart(urlStart);
     setEnd(urlEnd);
-  }, [urlStart, urlEnd]);
+    setMinAreaLocal(currentMinArea);
+    setMaxAreaLocal(currentMaxArea);
+  }, [urlStart, urlEnd, currentMinArea, currentMaxArea]);
 
   let activePreset = 'CUSTOM';
   if (!searchParams.get('start') && !searchParams.get('end')) {
@@ -108,6 +111,27 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
     });
   };
 
+  const applyAreaPreset = (min: string, max: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const isCurrentlyActive = currentMinArea === min && currentMaxArea === max;
+    
+    if (isCurrentlyActive) {
+      params.delete('minArea');
+      params.delete('maxArea');
+      setMinAreaLocal('');
+      setMaxAreaLocal('');
+    } else {
+      if (min) params.set('minArea', min); else params.delete('minArea');
+      if (max) params.set('maxArea', max); else params.delete('maxArea');
+      setMinAreaLocal(min);
+      setMaxAreaLocal(max);
+    }
+    
+    startTransition(() => {
+      router.push(`?${params.toString()}`);
+    });
+  };
+
   const clearAllFilters = () => {
     startTransition(() => {
       router.push('?');
@@ -123,10 +147,20 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
     currentTeam !== 'ALL' || 
     currentProjectType !== 'ALL' || 
     currentProductCategory !== 'ALL' || 
-    currentCustomerType !== 'ALL' || // 🌟 3. เช็กสถานะการกรองของ Customer Type
+    currentCustomerType !== 'ALL' || 
     currentSource !== 'ALL' || 
     currentMinArea || 
     currentMaxArea;
+
+  const areaPresets = [
+    { id: 'ZERO', label: '0 ตร.ม.', min: '0', max: '0', tooltip: 'ไม่มีพื้นที่ระบุ' },
+    { id: 'XS', label: 'XS', min: '1', max: '30', tooltip: 'ต่ำกว่า 30 ตร.ม.' },
+    { id: 'S', label: 'S', min: '31', max: '100', tooltip: '31 - 100 ตร.ม.' },
+    { id: 'M', label: 'M', min: '101', max: '300', tooltip: '101 - 300 ตร.ม.' },
+    { id: 'L', label: 'L', min: '301', max: '500', tooltip: '301 - 500 ตร.ม.' },
+    { id: 'XL', label: 'XL', min: '501', max: '1000', tooltip: '501 - 1000 ตร.ม.' },
+    { id: 'XXL', label: 'XXL', min: '1001', max: '', tooltip: 'มากกว่า 1000 ตร.ม.' },
+  ];
 
   return (
     <>
@@ -142,7 +176,8 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* --- แถวที่ 1: ตัวกรองปกติ --- */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <Filter size={16} className="text-slate-400 hidden lg:block mr-1" />
 
         <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner">
@@ -209,7 +244,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
           <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
         </div>
 
-        {/* 🌟 4. เพิ่ม Dropdown ประเภทลูกค้า (Customer Type) */}
         <div className="relative">
           <select 
             disabled={isPending}
@@ -218,7 +252,7 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
             value={currentCustomerType} 
             onChange={(e) => applyFilter('customerType', e.target.value)}
           >
-            <option value="ALL">ประเภทลูกค้า</option>
+            <option value="ALL">🤝 ลูกค้า: ทั้งหมด</option>
             {customerTypes?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
@@ -280,27 +314,6 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
           <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none" />
         </div>
 
-        <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1 bg-white shadow-sm hover:border-slate-300 transition-colors">
-          <span className="text-[10px] text-slate-500 font-bold px-1 uppercase">พื้นที่</span>
-          <input 
-            type="number" placeholder="Min" 
-            disabled={isPending}
-            className="w-12 text-xs outline-none bg-slate-50 rounded px-1 py-1 text-center disabled:opacity-50" 
-            value={minAreaLocal} onChange={(e) => setMinAreaLocal(e.target.value)}
-            onBlur={applyAreaFilter} 
-            onKeyDown={(e) => e.key === 'Enter' && applyAreaFilter()} 
-          />
-          <span className="text-slate-300">-</span>
-          <input 
-            type="number" placeholder="Max" 
-            disabled={isPending}
-            className="w-12 text-xs outline-none bg-slate-50 rounded px-1 py-1 text-center disabled:opacity-50" 
-            value={maxAreaLocal} onChange={(e) => setMaxAreaLocal(e.target.value)}
-            onBlur={applyAreaFilter}
-            onKeyDown={(e) => e.key === 'Enter' && applyAreaFilter()}
-          />
-        </div>
-
         {isFiltered && (
           <button 
             onClick={clearAllFilters}
@@ -311,7 +324,15 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
             <X size={14} strokeWidth={2.5} /> ล้าง
           </button>
         )}
+      </div>
 
+      {/* --- แถวที่ 2: ฟิลเตอร์ขนาดพื้นที่ (เพิ่ม Badge ตัวเลข) --- */}
+      <div className="flex flex-wrap items-center gap-3 w-full">
+    
+        
+       
+
+       
       </div>
     </>
   );
