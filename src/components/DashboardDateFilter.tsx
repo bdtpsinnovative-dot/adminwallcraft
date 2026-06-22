@@ -19,13 +19,20 @@ export default function DashboardDateFilter({ salesList, projectTypes, productCa
   const searchParams = useSearchParams();
   
   const [isPending, startTransition] = useTransition();
-
+const formatLocal = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+
+  // ✅ แก้เป็นแบบนี้ครับ
+  const todayStr = formatLocal(now);
   const thirtyDaysAgoDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const thirtyDaysAgoStr = thirtyDaysAgoDate.toISOString().split('T')[0];
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const thirtyDaysAgoStr = formatLocal(thirtyDaysAgoDate);
+  const firstDayOfMonth = formatLocal(new Date(now.getFullYear(), now.getMonth(), 1));
+  const lastDayOfMonth = formatLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   const allTimeStart = '2020-01-01';
   const allTimeEnd = '2030-12-31';
 

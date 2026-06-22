@@ -589,6 +589,8 @@ export default async function DashboardPage({
                   <td className="px-5 py-3 text-center">
                     <Link 
                       href={`/dashboard/checkins/${ci.userId}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
                       className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors border border-indigo-100 shadow-sm"
                     >
                       ดูประวัติ <ChevronRight size={14} />

@@ -76,7 +76,9 @@ export default function CompanyCandlestickChart({ data, salesKeys = [] }: Props)
     const timeSinceLastDrag = Date.now() - dragState.current.dragEndTime;
     if (dragState.current.isDragging || timeSinceLastDrag < 200) return; 
     if (!companyId) return; 
-    router.push(`/dashboard/companies/${companyId}`);
+    
+    // 🌟 ใช้ window.open พ่วงด้วย '_blank' เพื่อสั่งให้เบราว์เซอร์เปิดแท็บใหม่
+    window.open(`/dashboard/companies/${companyId}`, '_blank');
   };
 
   // ดึงประวัติแยกรายคน 
