@@ -19,6 +19,9 @@ interface Props {
 }
 
 function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategories, onRefresh }: any) {
+  // 🌟 ดึงค่าปี ค.ศ. ปัจจุบัน มาตั้งเป็นค่าเริ่มต้น และค่าต่ำสุด
+  const currentYearAD = new Date().getFullYear().toString();
+
   const [formData, setFormData] = useState({
     projectName: '',
     note: '',
@@ -27,12 +30,15 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
     projectTypeId: '',
     categoryId: '',
     queueLevel: '', 
-    projectYear: '2569'
+    projectYear: currentYearAD // 🌟 เปลี่ยนค่าตั้งต้นเป็น ค.ศ. ปัจจุบัน (เช่น 2026)
   });
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (isOpen && data) {
+      // ดึงปีมาจาก DB ถ้ามี ถ้าน้อยกว่าปีปัจจุบัน ให้บังคับโชว์ปีที่ดึงมาได้ (แต่เวลาแก้จะโดน min บังคับใหม่)
+      const dbYear = data.proj.project_year?.toString();
+      
       setFormData({
         projectName: data.proj.project_name || '',
         note: data.proj.project_note || '',
@@ -41,10 +47,10 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
         projectTypeId: data.proj.project_type_id || '',
         categoryId: data.item?.product_category_id || '',
         queueLevel: data.proj.queue_level || '', 
-        projectYear: data.proj.project_year || '2569' 
+        projectYear: dbYear || currentYearAD // 🌟 เซ็ตค่าปีตอนโหลดข้อมูล
       });
     }
-  }, [isOpen, data]);
+  }, [isOpen, data, currentYearAD]);
 
   if (!isOpen) return null;
 
@@ -233,7 +239,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
             
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">quarter</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">Quarter</label>
                 <select value={formData.queueLevel} onChange={(e) => setFormData({...formData, queueLevel: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 appearance-none bg-amber-50">
                   <option value="">Q</option>
                   <option value="1">Q 1</option>
@@ -243,8 +249,16 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">พ.ศ. (คาดการณ์)</label>
-                <input type="number" placeholder="เช่น 2569" value={formData.projectYear} onChange={(e) => setFormData({...formData, projectYear: e.target.value})} className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 bg-amber-50" />
+                {/* 🌟 เปลี่ยน Label และเพิ่ม min ควบคุมปี */}
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-amber-600">ค.ศ. (คาดการณ์)</label>
+                <input 
+                  type="number" 
+                  min={currentYearAD} // 🌟 บังคับไม่ให้พิมพ์ปีที่ต่ำกว่าปีปัจจุบัน
+                  placeholder={`เช่น ${currentYearAD}`} 
+                  value={formData.projectYear} 
+                  onChange={(e) => setFormData({...formData, projectYear: e.target.value})} 
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 font-bold text-amber-700 bg-amber-50" 
+                />
               </div>
             </div>
           </div>
@@ -254,6 +268,7 @@ function EditProjectModal({ isOpen, data, onClose, projectTypes, productCategori
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">ประเภทโครงการ</label>
               <select value={formData.projectTypeId} onChange={(e) => setFormData({...formData, projectTypeId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 font-medium text-slate-700 appearance-none bg-white">
                 <option value="">- เลือกระบุ -</option>
+                <option value="null">- ไม่ระบุ -</option>
                 {projectTypes.map((pt: any) => <option key={pt.id} value={pt.id}>{pt.name}</option>)}
               </select>
             </div>

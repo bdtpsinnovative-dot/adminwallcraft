@@ -49,7 +49,7 @@ export default function DashboardCharts({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">เทรนด์การสร้างโปรเจกต์รายวัน (Daily Activity)</h3>
-          <div className="h-72 w-full">
+          <div className="h-72 w-full"> {/* 👈 ฟิกซ์ขนาดความสูง 72 ไว้คุม ResponsiveContainer */}
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={lineData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -66,7 +66,7 @@ export default function DashboardCharts({
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">สัดส่วนประเภทโปรเจกต์ (Project Types)</h3>
           <p className="text-xs text-slate-500 mb-4">จัดลำดับประเภทโครงการที่พบมากที่สุด (ไม่รวมไม่ระบุประเภท)</p>
-          <div className="h-72 w-full">
+          <div className="h-72 w-full"> {/* 👈 ฟิกซ์ขนาดความสูง 72 ไว้คุม ResponsiveContainer */}
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={filteredProjectTypeData} 
@@ -103,7 +103,7 @@ export default function DashboardCharts({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">ระดับความสนใจของลูกค้า (Interest Level)</h3>
-          <div className="h-64 w-full">
+          <div className="h-64 w-full"> {/* 👈 ฟิกซ์ขนาดความสูง 64 ไว้คุม ResponsiveContainer */}
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={interestData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
@@ -122,7 +122,7 @@ export default function DashboardCharts({
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <h3 className="font-bold text-slate-800 mb-1">เครือข่ายผู้เกี่ยวข้อง (Project Stakeholders)</h3>
-          <div className="h-64 w-full">
+          <div className="h-64 w-full"> {/* 👈 ฟิกซ์ขนาดความสูง 64 ไว้คุม ResponsiveContainer */}
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stakeholderData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -142,7 +142,8 @@ export default function DashboardCharts({
         <p className="text-xs text-slate-500 mb-4">แสดงผลงานของเซลส์ทุกคน (เลื่อนซ้าย-ขวาเพื่อดูทั้งหมด)</p>
         
         <div className="w-full overflow-x-auto pb-4 custom-scrollbar">
-          <div style={{ height: '450px', minWidth: `${Math.max(barData.length * 80, 1000)}px` }}>
+          {/* 🛠️ ฟิกซ์ความสูง h-[450px] ตรงตัวกล่อง div ที่ครอบ ResponsiveContainer ชั้นนี้เลยครับ ชัวร์สุด */}
+          <div className="h-[450px]" style={{ minWidth: `${Math.max(barData.length * 80, 1000)}px` }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />

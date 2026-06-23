@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { ChevronRight, Smartphone, FileText } from 'lucide-react';
 import { cookies } from 'next/headers';
 import CompanyCandlestickChart from '@/components/CompanyCandlestickChart';
-
+import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage({
@@ -35,14 +35,23 @@ export default async function DashboardPage({
     supabase.from('customer_types').select('id, name')
   ]);
 
-  const cookieStore = await cookies();
+const cookieStore = await cookies();
   const token = cookieStore.get('admin_token')?.value;
-  let user = null;
-  if (token) {
-    const { data } = await supabase.auth.getUser(token);
-    user = data?.user;
+  
+  // 1. ถ้าไม่มี Cookie เลย เตะกลับหน้า Login
+  if (!token) {
+    redirect('/login');
   }
 
+  // 2. เอา Token ไปเช็คกับ Supabase ว่ากุญแจยังไม่หมดอายุใช่ไหม?
+  const { data, error } = await supabase.auth.getUser(token);
+
+  // 🛑 3. จุดสำคัญ: ถ้า Token หมดอายุ (Error) หรือไม่ได้ข้อมูล User ให้เตะกลับหน้า Login ทันที!
+  if (error || !data?.user) {
+    redirect('/login');
+  }
+
+  const user = data.user;
   let currentUserRole = 'user';
   let currentUserTeamId = null;
 
