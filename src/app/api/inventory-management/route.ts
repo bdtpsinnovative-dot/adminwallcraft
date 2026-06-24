@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// 🟢 ป้องกัน Next.js จำข้อมูล (แก้ปัญหาข้อมูลไม่ยอมอัปเดต) 🟢
+// 🟢 ป้องกัน Next.js จำข้อมูล
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// ตั้งค่า Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -21,13 +20,7 @@ export async function GET(request: Request) {
     if (type === 'balance') {
       const { data, error } = await supabase
         .from('stock_balance')
-        .select(`
-          *,
-          linked_item:product_variants!linked_variant_id(
-            id, sku, variant_image,
-            products ( image_url )
-          )
-        `) 
+        .select(`*`) 
         .order('item_name', { ascending: true })
         .order('series', { ascending: true });
 
@@ -46,12 +39,11 @@ export async function GET(request: Request) {
       }
 
       const enrichedData = data.map((item: any) => {
-        const imgUrl = item.linked_item?.variant_image || item.linked_item?.products?.image_url || null;
         return {
           ...item,
           pending_qty: pendingMap[item.id] || 0,
-          catalog_image: imgUrl,
-          catalog_sku: item.linked_item?.sku || null
+          catalog_image: item.catalog_image_url || null,
+          catalog_sku: '-'
         };
       });
 
@@ -89,8 +81,7 @@ export async function GET(request: Request) {
         .select(`
           id, date_in, qty, product_id, created_at,
           stock_balance ( 
-            series, item_name, color_name, material, height_mm, width_mm, thickness_mm,
-            linked_item:product_variants!linked_variant_id(sku, variant_image, products ( image_url ))
+            series, item_name, color_name, material, height_mm, width_mm, thickness_mm, catalog_image_url
           ),
           operator:profiles!created_by(full_name)
         `)
@@ -99,12 +90,11 @@ export async function GET(request: Request) {
       if (error) throw error;
       
       const flattenedData = data.map((item: any) => {
-        const imgUrl = item.stock_balance?.linked_item?.variant_image || item.stock_balance?.linked_item?.products?.image_url || null;
         return {
           id: item.id, product_id: item.product_id, qty: item.qty, date_in: item.date_in,
           operator_name: item.operator?.full_name || 'System',
-          catalog_image: imgUrl,
-          catalog_sku: item.stock_balance?.linked_item?.sku || null,
+          catalog_image: item.stock_balance?.catalog_image_url || null,
+          catalog_sku: '-',
           ...item.stock_balance
         }
       });
@@ -118,8 +108,7 @@ export async function GET(request: Request) {
         .select(`
           id, date_out, qty, status, product_id, quotation, invoice_tps, created_at,
           stock_balance ( 
-            series, item_name, color_name, material, height_mm, width_mm, thickness_mm,
-            linked_item:product_variants!linked_variant_id(sku, variant_image, products ( image_url ))
+            series, item_name, color_name, material, height_mm, width_mm, thickness_mm, catalog_image_url
           ),
           operator:profiles!created_by(full_name)
         `)
@@ -128,13 +117,12 @@ export async function GET(request: Request) {
       if (error) throw error;
 
       const flattenedData = data.map((item: any) => {
-        const imgUrl = item.stock_balance?.linked_item?.variant_image || item.stock_balance?.linked_item?.products?.image_url || null;
         return {
           id: item.id, product_id: item.product_id, qty: item.qty, date_out: item.date_out,
           status: item.status, quotation: item.quotation, invoice_tps: item.invoice_tps,
           operator_name: item.operator?.full_name || 'System',
-          catalog_image: imgUrl,
-          catalog_sku: item.stock_balance?.linked_item?.sku || null,
+          catalog_image: item.stock_balance?.catalog_image_url || null,
+          catalog_sku: '-',
           ...item.stock_balance
         }
       });
@@ -143,8 +131,8 @@ export async function GET(request: Request) {
     }
 
     else if (type === 'log') {
-      const selectLog = `id, date_in, qty, created_at, stock_balance ( series, item_name, color_name, linked_item:product_variants!linked_variant_id(sku, variant_image, products(image_url)) ), operator:profiles!created_by(full_name)`;
-      const selectLogOut = `id, date_out, qty, status, quotation, invoice_tps, created_at, stock_balance ( series, item_name, color_name, linked_item:product_variants!linked_variant_id(sku, variant_image, products(image_url)) ), operator:profiles!created_by(full_name)`;
+      const selectLog = `id, date_in, qty, created_at, stock_balance ( series, item_name, color_name, catalog_image_url ), operator:profiles!created_by(full_name)`;
+      const selectLogOut = `id, date_out, qty, status, quotation, invoice_tps, created_at, stock_balance ( series, item_name, color_name, catalog_image_url ), operator:profiles!created_by(full_name)`;
       
       const { data: inData, error: inError } = await supabase.from('stock_in').select(selectLog);
       if (inError) throw inError;
@@ -152,7 +140,7 @@ export async function GET(request: Request) {
       const { data: outData, error: outError } = await supabase.from('stock_out').select(selectLogOut);
       if (outError) throw outError;
 
-      const extractImg = (stock_balance: any) => stock_balance?.linked_item?.variant_image || stock_balance?.linked_item?.products?.image_url || null;
+      const extractImg = (stock_balance: any) => stock_balance?.catalog_image_url || null;
 
       const logs = [
         ...(inData || []).map((item: any) => ({
@@ -187,38 +175,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     
     const { 
-      action, 
-      product_id, 
-      qty, 
-      quotation, 
-      invoice_tps, 
-      series, 
-      item_name, 
-      color_name, 
-      material, 
-      height_mm, 
-      width_mm, 
-      thickness_mm, 
-      out_id, 
-      new_status, 
-      user_id, 
-      stock_id, 
-      variant_id,
-      csvData
+      action, product_id, qty, quotation, invoice_tps, series, item_name, color_name, material, height_mm, width_mm, thickness_mm, out_id, new_status, user_id, stock_id, csvData, image_url
     } = body;
 
-    if (action === 'link_product') {
-      if (!stock_id || !variant_id) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
-      const { error } = await supabase.from('stock_balance').update({ linked_variant_id: variant_id }).eq('id', stock_id);
-      if (error) throw error;
-      return NextResponse.json({ success: true, message: 'เชื่อมโยงรูปภาพสินค้าเรียบร้อยแล้ว' });
-    }
-
-    // 2. 🟢 อัปเดตสถานะการเบิก (Approve/Reject) พร้อมเซฟเลขเอกสาร
+    // 🟢 Action: เปลี่ยนสถานะการเบิก (อนุมัติ / ไม่อนุมัติ / Undo)
     if (action === 'update_status_out') {
       if (!out_id || !new_status) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
       
-      // เตรียมข้อมูลอัปเดต ถ้ามี quotation หรือ invoice_tps แนบมา ให้จับยัดเข้าไปด้วยเลย
       const updateData: any = { status: new_status };
       if (quotation !== undefined) updateData.quotation = quotation || null;
       if (invoice_tps !== undefined) updateData.invoice_tps = invoice_tps || null;
@@ -226,9 +189,46 @@ export async function POST(request: Request) {
       const { error } = await supabase.from('stock_out').update(updateData).eq('id', out_id);
       if (error) throw error;
       
-      return NextResponse.json({ success: true, message: `เปลี่ยนสถานะเป็น ${new_status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ'} สำเร็จ` });
+      let statusTh = new_status === 'approved' ? 'อนุมัติ' : new_status === 'rejected' ? 'ไม่อนุมัติ' : 'รอดำเนินการ';
+      return NextResponse.json({ success: true, message: `เปลี่ยนสถานะเป็น ${statusTh} สำเร็จ` });
     }
 
+    // 🟢 Action: ลบแถวคำขอเบิกออก (หน้า Out)
+    if (action === 'delete_out_request') {
+      if (!out_id) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
+
+      const { data: currentItem, error: checkError } = await supabase.from('stock_out').select('status').eq('id', out_id).single();
+      if (checkError) throw checkError;
+
+      if (currentItem?.status === 'approved') {
+        return NextResponse.json({ 
+          success: false, 
+          message: 'ไม่สามารถลบรายการที่อนุมัติแล้วได้! ต้องกด Undo ให้กลับเป็น Pending เพื่อคืนสต็อกเข้าคลังก่อนครับ' 
+        }, { status: 400 });
+      }
+
+      const { error } = await supabase.from('stock_out').delete().eq('id', out_id);
+      if (error) throw error;
+      return NextResponse.json({ success: true, message: 'ลบรายการคำขอเบิกออกจากระบบเรียบร้อยแล้ว' });
+    }
+
+    // 🟢 Action: ลบรายการสินค้าหลักออกจากคลัง (หน้า Master)
+    if (action === 'delete_stock_row') {
+      if (!stock_id) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
+      const { error } = await supabase.from('stock_balance').delete().eq('id', stock_id);
+      if (error) throw error;
+      return NextResponse.json({ success: true, message: 'ลบแถวรายการออกจากคลังเรียบร้อย' });
+    }
+
+    // 🟢 Action: ผูก URL รูปภาพใหม่
+    if (action === 'link_product') {
+      if (!stock_id || !image_url) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' }, { status: 400 });
+      const { error } = await supabase.from('stock_balance').update({ catalog_image_url: image_url }).eq('id', stock_id);
+      if (error) throw error;
+      return NextResponse.json({ success: true, message: 'เชื่อมโยงรูปภาพสินค้าเรียบร้อยแล้ว' });
+    }
+
+    // 🟢 Action: สร้างสินค้าใหม่
     if (action === 'create_master') {
       if (!item_name) return NextResponse.json({ success: false, message: 'ต้องระบุชื่อสินค้า' }, { status: 400 });
       const { error } = await supabase.from('stock_balance').insert([{ 
@@ -241,12 +241,13 @@ export async function POST(request: Request) {
         thickness_mm: thickness_mm ? Number(thickness_mm) : null,
         qty: 0,
         created_by: user_id,
-        linked_variant_id: body.linked_variant_id || null
+        catalog_image_url: body.catalog_image_url || null 
       }]);
       if (error) throw error;
       return NextResponse.json({ success: true, message: 'สร้างสินค้าหลักสำเร็จ' });
     }
 
+    // 🟢 Action: รับเข้า
     if (action === 'in') {
       if (!product_id || !qty || qty <= 0) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
       const { error } = await supabase.from('stock_in').insert([{ product_id, qty, created_by: user_id }]);
@@ -254,6 +255,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'บันทึกการรับเข้าสำเร็จ' });
     }
 
+    // 🟢 Action: จ่ายของ (เบิกออก)
     if (action === 'out') {
       if (!product_id || !qty || qty <= 0) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
       const { error } = await supabase.from('stock_out').insert([{ 
@@ -263,6 +265,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'ส่งคำขอเบิกสินค้าสำเร็จ' });
     }
 
+    // 🟢 Action: แก้ไขข้อมูลตอนเบิก
     if (action === 'edit_out') {
       if (!out_id || !qty || qty <= 0) return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
       const { error } = await supabase.from('stock_out').update({
@@ -272,14 +275,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'แก้ไขข้อมูลการเบิกสำเร็จ' });
     }
 
-    // 🚀 Smart Import CSV (หา/สร้างสินค้า + รับเข้าอัตโนมัติ)
+    // 🚀 Action: Smart Import CSV
     if (action === 'import_csv') {
       if (!csvData || !Array.isArray(csvData) || csvData.length === 0) {
         return NextResponse.json({ success: false, message: 'ไม่พบข้อมูล CSV' }, { status: 400 });
       }
 
       for (const row of csvData) {
-        // 1. หาหรือสร้างสินค้าใหม่
         const { data: finalProductId, error: productError } = await supabase.rpc('get_or_create_stock_item', {
           p_series: row.series || null,
           p_item_name: row.item_name || 'สินค้าจากระบบนำเข้า', 
@@ -290,32 +292,18 @@ export async function POST(request: Request) {
           p_thickness: row.thickness_mm ? Number(row.thickness_mm) : 0
         });
 
-        if (productError) {
-          console.error(`RPC Error: ${productError.message}`);
-          throw new Error(`เกิดข้อผิดพลาดในการตรวจสอบสินค้า: ${productError.message}`);
-        }
+        if (productError) throw new Error(`เกิดข้อผิดพลาดในการตรวจสอบสินค้า: ${productError.message}`);
 
-        // เมื่อได้ ID มาแล้ว (ไม่ว่าจะของเดิมหรือสร้างใหม่) ก็ Insert ลง stock_in
         if (finalProductId && row.qty && Number(row.qty) > 0) {
-          
-          // 🟢 เตรียมข้อมูลสำหรับบันทึก
           const insertPayload: any = { 
             product_id: finalProductId, 
             qty: Number(row.qty), 
             created_by: user_id
           };
-
-          // 🟢 ถ้าระบบอ่านวันที่จาก CSV มาได้ ให้ใช้วันที่นั้น (แต่ถ้าอ่านไม่ได้ DB จะใช้วันปัจจุบันอัตโนมัติ)
-          if (row.date_in) {
-            insertPayload.date_in = row.date_in;
-          }
-
+          if (row.date_in) insertPayload.date_in = row.date_in;
+          
           const { error: inError } = await supabase.from('stock_in').insert([insertPayload]);
-
-          if (inError) {
-            console.error(`Stock In Error: ${inError.message}`);
-            throw new Error(`บันทึกรับเข้าไม่สำเร็จ: ${inError.message}`);
-          }
+          if (inError) throw new Error(`บันทึกรับเข้าไม่สำเร็จ: ${inError.message}`);
         }
       }
       return NextResponse.json({ success: true, message: 'นำเข้าข้อมูล CSV และอัปเดตสต็อกเรียบร้อย' });
@@ -325,7 +313,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("API POST Error:", error.message);
-    // ส่งข้อความ Error สีแดงกลับไปแสดงที่หน้าเว็บให้นายเห็นชัดๆ
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }

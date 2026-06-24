@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment } from 'react';
-import { Search, Warehouse, Inbox, Truck, Route, Boxes, X, CheckCircle2, AlertCircle, Edit, Image as ImageIcon, RotateCcw } from 'lucide-react';
+import { Search, Warehouse, Inbox, Truck, Route, Boxes, X, CheckCircle2, AlertCircle, Edit, Image as ImageIcon, RotateCcw, Trash } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -15,9 +15,8 @@ export default function OutInventoryPage() {
   const [editModal, setEditModal] = useState<{ isOpen: boolean, item: any }>({ isOpen: false, item: null });
   const [txForm, setTxForm] = useState({ qty: '', quotation: '', invoice_tps: '' });
   
-  // 🟢 1. เพิ่ม State มารับค่า Input เอกสารใน Modal ยืนยัน
   const [confirmModal, setConfirmModal] = useState<{ 
-    isOpen: boolean, item: any, new_status: 'approved' | 'rejected', title: string, message: string, 
+    isOpen: boolean, item: any, new_status: 'approved' | 'rejected' | 'pending', title: string, message: string, 
     needsInput: boolean, quotation: string, invoice_tps: string 
   }>({ 
     isOpen: false, item: null, new_status: 'approved', title: '', message: '', needsInput: false, quotation: '', invoice_tps: '' 
@@ -43,6 +42,27 @@ export default function OutInventoryPage() {
 
   const showAlert = (type: 'success' | 'error', title: string, message: string) => {
     setAlertModal({ isOpen: true, type, title, message });
+  };
+
+  // 🟢 ฟังก์ชันสำหรับส่งคำสั่งลบแถวคำขอเบิกออก
+  const handleDeleteOutRow = async (outId: string, itemName: string) => {
+    if (!confirm(`ต้องการลบแถวคำขอเบิกของ "${itemName}" นี้ออกจากระบบใช่ไหมครับนาย?`)) return;
+    try {
+      const res = await fetch('/api/inventory-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_out_request', out_id: outId }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        showAlert('success', 'สำเร็จ!', result.message);
+        fetchData(); 
+      } else {
+        showAlert('error', 'ล้มเหลว', result.message);
+      }
+    } catch (e) {
+      showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+    }
   };
 
   const openEditModal = (item: any) => {
@@ -76,7 +96,6 @@ export default function OutInventoryPage() {
     }
   };
 
-// 🟢 ปรับให้รองรับการ Undo (เปลี่ยนกลับเป็น pending)
   const openApprovalConfirm = (item: any, status: 'approved' | 'rejected' | 'pending') => {
     const isMissingDocs = !item.quotation || !item.invoice_tps; 
     const needsInput = status === 'approved' && isMissingDocs;
@@ -96,13 +115,12 @@ export default function OutInventoryPage() {
     }
 
     setConfirmModal({
-      isOpen: true, item, new_status: status as any, title, message,
+      isOpen: true, item, new_status: status, title, message,
       needsInput, quotation: item.quotation || '', invoice_tps: item.invoice_tps || ''
     });
   };
 
-const executeApproval = async () => {
-    // เช็คว่าถ้าช่องใดช่องหนึ่งว่าง ให้เตือนเลย
+  const executeApproval = async () => {
     if (confirmModal.needsInput && (!confirmModal.quotation || !confirmModal.invoice_tps)) {
       showAlert('error', 'ข้อมูลไม่ครบ', 'ต้องกรอกเลข Quotation และ Invoice ให้ครบทั้ง 2 ช่องครับ');
       return;
@@ -116,7 +134,7 @@ const executeApproval = async () => {
           action: 'update_status_out', 
           out_id: confirmModal.item.id, 
           new_status: confirmModal.new_status,
-          quotation: confirmModal.quotation, // ส่งข้อมูลที่กรอกใหม่ไปเซฟด้วย
+          quotation: confirmModal.quotation,
           invoice_tps: confirmModal.invoice_tps
         }),
       });
@@ -210,39 +228,53 @@ const executeApproval = async () => {
                         <div className="flex items-center gap-2"><Boxes size={14} className="text-blue-600" />{groupName} <span className="font-normal text-slate-500 text-xs ml-2">({items.length} รายการ)</span></div>
                       </td>
                     </tr>
-                    {items.map((item) => (
-                      <tr key={item.id} className="hover:bg-blue-50/50 transition-colors bg-white">
-                        <td className="px-3 py-1.5 border border-slate-300 text-center">
-                          {item.catalog_image ? (
-                            <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm"><img src={item.catalog_image} alt="product" className="w-full h-full object-cover" /></div>
-                          ) : <span className="text-slate-300">-</span>}
-                        </td>
-                        <td className="px-3 py-1.5 border border-slate-300">{item.series || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300">{item.color_name || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.material || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.height_mm || 0} x {item.width_mm || 0} x {item.thickness_mm || 0}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 whitespace-nowrap">{item.date_out}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 font-mono text-[11px]">{item.quotation || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 font-mono text-[11px]">{item.invoice_tps || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-center"><StatusBadge status={item.status} /></td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-center text-blue-700 font-medium text-xs">{item.operator_name || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-center font-bold text-orange-600">{item.qty?.toLocaleString() || 0}</td>
-                        <td className="px-3 py-1 border border-slate-300">
-                          {item.status === 'pending' ? (
-                            <div className="flex justify-center gap-1">
-                              <button onClick={() => openEditModal(item)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="แก้ไขข้อมูล"><Edit size={16} /></button>
-                              <button onClick={() => openApprovalConfirm(item, 'approved')} className="p-1 text-green-600 hover:bg-green-100 rounded" title="อนุมัติ"><CheckCircle2 size={16} /></button>
-                              <button onClick={() => openApprovalConfirm(item, 'rejected')} className="p-1 text-red-600 hover:bg-red-100 rounded" title="ไม่อนุมัติ"><X size={16} /></button>
-                            </div>
-                          ) : (
-                            // 🟢 ถ้ากดอนุมัติหรือปฏิเสธไปแล้ว ให้แสดงปุ่มย้อนกลับ (Undo)
-                            <div className="flex justify-center gap-1">
-                              <button onClick={() => openApprovalConfirm(item, 'pending')} className="p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors" title="ย้อนกลับเป็นสถานะ Pending"><RotateCcw size={16} /></button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {items.map((item) => {
+                      const imgUrl = item.catalog_image || item.catalog_image_url;
+                      return (
+                        <tr key={item.id} className="hover:bg-blue-50/50 transition-colors bg-white">
+                          <td className="px-3 py-1.5 border border-slate-300 text-center">
+                            {imgUrl ? (
+                              <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm">
+                                <img src={imgUrl} alt="product" className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 rounded border border-slate-100 bg-slate-50 flex items-center justify-center mx-auto text-slate-300 shadow-sm">
+                                <ImageIcon size={14} />
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 border border-slate-300">{item.series || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300">{item.color_name || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.material || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.height_mm || 0} x {item.width_mm || 0} x {item.thickness_mm || 0}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 whitespace-nowrap">{item.date_out}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 font-mono text-[11px]">{item.quotation || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 font-mono text-[11px]">{item.invoice_tps || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-center"><StatusBadge status={item.status} /></td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-center text-blue-700 font-medium text-xs">{item.operator_name || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-center font-bold text-orange-600">{item.qty?.toLocaleString() || 0}</td>
+                          <td className="px-3 py-1 border border-slate-300">
+                            {item.status === 'pending' ? (
+                              <div className="flex justify-center gap-1">
+                                <button onClick={() => openEditModal(item)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="แก้ไขข้อมูล"><Edit size={16} /></button>
+                                <button onClick={() => openApprovalConfirm(item, 'approved')} className="p-1 text-green-600 hover:bg-green-100 rounded" title="อนุมัติ"><CheckCircle2 size={16} /></button>
+                                <button onClick={() => openApprovalConfirm(item, 'rejected')} className="p-1 text-red-600 hover:bg-red-100 rounded" title="ไม่อนุมัติ"><X size={16} /></button>
+                                {/* 🟢 เพิ่มปุ่มถังขยะสำหรับลบรายการคำขอเบิกที่อยู่สถานะ Pending */}
+                                <button onClick={() => handleDeleteOutRow(item.id, item.item_name)} className="p-1 text-red-500 hover:bg-red-100 rounded" title="ลบคำขอเบิก"><Trash size={16} /></button>
+                              </div>
+                            ) : (
+                              <div className="flex justify-center gap-1.5 items-center">
+                                <button onClick={() => openApprovalConfirm(item, 'pending')} className="p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors" title="ย้อนกลับเป็นสถานะ Pending"><RotateCcw size={16} /></button>
+                                {/* 🟢 เพิ่มปุ่มถังขยะให้รายการที่โดน ปฏิเสธ (Rejected) ไปแล้วสามารถลบทิ้งได้เคลีนๆ */}
+                                {item.status === 'rejected' && (
+                                  <button onClick={() => handleDeleteOutRow(item.id, item.item_name)} className="p-1 text-red-500 hover:bg-slate-200 rounded" title="ลบแถวประวัติ"><Trash size={16} /></button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </Fragment>
                 ))
               )}
@@ -269,7 +301,7 @@ const executeApproval = async () => {
         </div>
       )}
 
-      {/* 🟢 4. ปรับหน้าต่าง Confirm Modal ให้มีช่องกรอกเอกสาร */}
+      {/* Confirm Modal */}
       {confirmModal.isOpen && confirmModal.item && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center border border-slate-200">
@@ -277,7 +309,6 @@ const executeApproval = async () => {
             <h3 className="text-lg font-bold text-slate-800 mb-2">{confirmModal.title}</h3>
             <p className="text-slate-500 text-sm">{confirmModal.message}</p>
 
-            {/* 🟢 3. เติมดอกจันให้รู้ว่าบังคับกรอก */}
             {confirmModal.needsInput && (
               <div className="w-full text-left mt-4 mb-5 space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-md">
                 <div>
@@ -311,7 +342,15 @@ const executeApproval = async () => {
             </div>
             <form onSubmit={submitEditOut} className="p-5">
               <div className="mb-5 p-3 bg-slate-50 rounded border border-slate-200 text-sm flex gap-4 items-center">
-                {editModal.item.catalog_image ? <div className="w-16 h-16 rounded border border-slate-200 overflow-hidden shrink-0"><img src={editModal.item.catalog_image} alt="product" className="w-full h-full object-cover" /></div> : <div className="w-16 h-16 rounded border border-slate-200 bg-slate-100 flex items-center justify-center shrink-0"><ImageIcon className="text-slate-300" size={24} /></div>}
+                {editModal.item.catalog_image || editModal.item.catalog_image_url ? (
+                  <div className="w-16 h-16 rounded border border-slate-200 overflow-hidden shrink-0">
+                    <img src={editModal.item.catalog_image || editModal.item.catalog_image_url} alt="product" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded border border-slate-100 bg-slate-50 flex items-center justify-center shrink-0">
+                    <ImageIcon className="text-slate-300" size={24} />
+                  </div>
+                )}
                 <div>
                   <div className="text-slate-500 mb-1 text-xs">รายการสินค้า:</div>
                   <div className="font-bold text-slate-800">{editModal.item.item_name}</div>

@@ -39,7 +39,7 @@ export default function InInventoryPage() {
     setAlertModal({ isOpen: true, type, title, message });
   };
 
-// 🟢 1. ฟังก์ชันอ่านไฟล์ CSV เมื่อผู้ใช้เลือกไฟล์
+  // 🟢 1. ฟังก์ชันอ่านไฟล์ CSV เมื่อผู้ใช้เลือกไฟล์
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -54,7 +54,6 @@ export default function InInventoryPage() {
         return;
       }
 
-     // 🛠️ ฟังก์ชันเดิม (cleanStr, cleanNum)
       const cleanStr = (str: string) => {
         return str ? str.replace(/^"|"$/g, '').trim() : '';
       };
@@ -65,15 +64,14 @@ export default function InInventoryPage() {
         return Number(cleaned) || 0;
       };
 
-      // 🟢 1. เพิ่มฟังก์ชันแปลงวันที่ DD/MM/YYYY เป็น YYYY-MM-DD
       const parseDate = (dateStr: string) => {
         if (!dateStr) return undefined;
         const cleanDate = dateStr.replace(/^"|"$/g, '').trim();
-        const parts = cleanDate.split('/'); // หั่นด้วยเครื่องหมายทับ
+        const parts = cleanDate.split('/');
         if (parts.length === 3) {
-          return `${parts[2]}-${parts[1]}-${parts[0]}`; // สลับเป็น ปี-เดือน-วัน
+          return `${parts[2]}-${parts[1]}-${parts[0]}`; 
         }
-        return undefined; // ถ้าพัง ให้คืนค่าว่างไว้ให้ DB ใช้วันนี้แทน
+        return undefined; 
       };
 
       const parsedData = [];
@@ -86,7 +84,7 @@ export default function InInventoryPage() {
         
         if (qty > 0) {
           parsedData.push({
-            date_in: parseDate(cols[0]), // 🟢 2. ดึงค่าคอลัมน์ A (Date) มาใช้แล้ว!
+            date_in: parseDate(cols[0]),
             series: cleanStr(cols[1]),
             item_name: cleanStr(cols[2]) || 'ไม่ระบุชื่อ',
             color_name: cleanStr(cols[3]),
@@ -128,7 +126,7 @@ export default function InInventoryPage() {
       if (result.success) {
         setImportModal({ isOpen: false, data: [] });
         showAlert('success', 'นำเข้าสำเร็จ!', `บันทึกรายการรับเข้าจำนวน ${importModal.data.length} รายการเรียบร้อยแล้ว`);
-        fetchData(); // โหลดตารางใหม่
+        fetchData(); 
       } else {
         showAlert('error', 'ล้มเหลว', result.message);
       }
@@ -188,7 +186,6 @@ export default function InInventoryPage() {
                   className="w-full pl-8 pr-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
               </div>
               
-              {/* 🟢 ปุ่ม Import CSV */}
               <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
               <button 
                 onClick={() => fileInputRef.current?.click()} 
@@ -228,22 +225,32 @@ export default function InInventoryPage() {
                         <div className="flex items-center gap-2"><Boxes size={14} className="text-blue-600" />{groupName} <span className="font-normal text-slate-500 text-xs ml-2">({(items as any[]).length} รายการ)</span></div>
                       </td>
                     </tr>
-                    {(items as any[]).map((item) => (
-                      <tr key={item.id} className="hover:bg-blue-50/50 transition-colors bg-white">
-                        <td className="px-3 py-1.5 border border-slate-300 text-center">
-                          {item.catalog_image ? (
-                            <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm"><img src={item.catalog_image} alt="product" className="w-full h-full object-cover" /></div>
-                          ) : <span className="text-slate-300">-</span>}
-                        </td>
-                        <td className="px-3 py-1.5 border border-slate-300">{item.series || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300">{item.color_name || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.material || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.height_mm || 0} x {item.width_mm || 0} x {item.thickness_mm || 0}</td>
-                        <td className="px-3 py-1.5 border border-slate-300">{item.date_in}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-center text-blue-700 font-medium text-xs">{item.operator_name || '-'}</td>
-                        <td className="px-3 py-1.5 border border-slate-300 text-center font-bold text-green-600">+{item.qty?.toLocaleString() || 0}</td>
-                      </tr>
-                    ))}
+                    {(items as any[]).map((item) => {
+                      const imgUrl = item.catalog_image || item.catalog_image_url;
+                      return (
+                        <tr key={item.id} className="hover:bg-blue-50/50 transition-colors bg-white">
+                          <td className="px-3 py-1.5 border border-slate-300 text-center">
+                            {/* 🟢 ดัก URL และแสดง Placeholder กรณีไม่มีรูป */}
+                            {imgUrl ? (
+                              <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm">
+                                <img src={imgUrl} alt="product" className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 rounded border border-slate-100 bg-slate-50 flex items-center justify-center mx-auto text-slate-300 shadow-sm">
+                                <ImageIcon size={14} />
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 border border-slate-300">{item.series || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300">{item.color_name || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.material || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-slate-600">{item.height_mm || 0} x {item.width_mm || 0} x {item.thickness_mm || 0}</td>
+                          <td className="px-3 py-1.5 border border-slate-300">{item.date_in}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-center text-blue-700 font-medium text-xs">{item.operator_name || '-'}</td>
+                          <td className="px-3 py-1.5 border border-slate-300 text-center font-bold text-green-600">+{item.qty?.toLocaleString() || 0}</td>
+                        </tr>
+                      );
+                    })}
                   </Fragment>
                 ))
               )}

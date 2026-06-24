@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment } from 'react';
-import { Search, Warehouse, Inbox, Truck, Route, Boxes, PlusCircle, MinusCircle, X, CheckCircle2, AlertCircle, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Search, Warehouse, Inbox, Truck, Route, Boxes, PlusCircle, MinusCircle, X, CheckCircle2, AlertCircle, Link as LinkIcon, Image as ImageIcon, Trash } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -16,7 +16,7 @@ export default function MasterInventoryPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newItem, setNewItem] = useState({ 
     series: '', item_name: '', color_name: '', material: '', height_mm: '', width_mm: '', thickness_mm: '', 
-    linked_variant_id: null as number | null, 
+    catalog_image_url: '', 
     preview_image: '' 
   });
   
@@ -27,6 +27,8 @@ export default function MasterInventoryPage() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogResults, setCatalogResults] = useState<any[]>([]);
   const [isSearchingCatalog, setIsSearchingCatalog] = useState(false);
+  
+  const [manualUrl, setManualUrl] = useState(''); // 🟢 เอาไว้จำ URL ที่พิมพ์กรอกเอง
 
   const currentUserId = null; 
 
@@ -55,9 +57,10 @@ export default function MasterInventoryPage() {
     }
   };
 
+  // 🟢 ฟังก์ชันสำหรับกดเลือกรูปจากระบบ Catalog
   const executeLinkProduct = async (catalogItem: any) => {
     if (linkModal.target === 'new') {
-      setNewItem({ ...newItem, linked_variant_id: catalogItem.id, preview_image: catalogItem.image });
+      setNewItem({ ...newItem, catalog_image_url: catalogItem.image, preview_image: catalogItem.image });
       setLinkModal({ isOpen: false, target: 'existing', stockItem: null });
       return;
     }
@@ -65,7 +68,7 @@ export default function MasterInventoryPage() {
       const res = await fetch('/api/inventory-management', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'link_product', stock_id: linkModal.stockItem.id, variant_id: catalogItem.id }),
+        body: JSON.stringify({ action: 'link_product', stock_id: linkModal.stockItem.id, image_url: catalogItem.image }),
       });
       const result = await res.json();
       setLinkModal({ isOpen: false, target: 'existing', stockItem: null });
@@ -80,10 +83,61 @@ export default function MasterInventoryPage() {
     }
   };
 
+  // 🟢 ฟังก์ชันสำหรับบันทึก URL รูปภาพที่กรอกเองตรงๆ
+  const handleManualUrlSubmit = async () => {
+    if (!manualUrl) return;
+
+    if (linkModal.target === 'new') {
+      setNewItem({ ...newItem, catalog_image_url: manualUrl, preview_image: manualUrl });
+      setLinkModal({ isOpen: false, target: 'existing', stockItem: null });
+      setManualUrl('');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/inventory-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'link_product', stock_id: linkModal.stockItem.id, image_url: manualUrl }),
+      });
+      const result = await res.json();
+      setLinkModal({ isOpen: false, target: 'existing', stockItem: null });
+      setManualUrl('');
+      if (result.success) {
+        showAlert('success', 'สำเร็จ!', result.message);
+        fetchData(); 
+      } else {
+        showAlert('error', 'ข้อผิดพลาด', result.message);
+      }
+    } catch (e) {
+      showAlert('error', 'ข้อผิดพลาด', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+    }
+  };
+
+  // 🟢 ฟังก์ชันสั่งลบแถว
+  const handleDeleteRow = async (stockId: string, itemName: string) => {
+    if (!confirm(`ยืนยันการลบแถว "${itemName}" ออกจากตารางคลังสินค้า?\n(ประวัติ In/Out ของสินค้านี้จะหายไปด้วยนะ)`)) return;
+    try {
+      const res = await fetch('/api/inventory-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_stock_row', stock_id: stockId }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        showAlert('success', 'สำเร็จ!', result.message);
+        fetchData(); 
+      } else {
+        showAlert('error', 'ล้มเหลว', result.message);
+      }
+    } catch (e) {
+      showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 🌟 บังคับดึงเฉพาะ balance
       const res = await fetch(`/api/inventory-management?type=balance`);
       const json = await res.json();
       if (json.success) {
@@ -115,7 +169,7 @@ export default function MasterInventoryPage() {
       const result = await res.json();
       if (result.success) {
         setShowAddModal(false);
-        setNewItem({ series: '', item_name: '', color_name: '', material: '', height_mm: '', width_mm: '', thickness_mm: '', linked_variant_id: null, preview_image: '' });
+        setNewItem({ series: '', item_name: '', color_name: '', material: '', height_mm: '', width_mm: '', thickness_mm: '', catalog_image_url: '', preview_image: '' });
         showAlert('success', 'สำเร็จ!', 'เพิ่มสินค้าใหม่เรียบร้อยแล้ว');
         fetchData();
       } else {
@@ -150,7 +204,6 @@ export default function MasterInventoryPage() {
       product_id: txModal.item.id, 
       qty: qtyNum,
       user_id: currentUserId 
-      
     };
 
     if (txModal.type === 'out') {
@@ -203,7 +256,6 @@ export default function MasterInventoryPage() {
                 Logistics & Inventory
               </h1>
               
-              {/* 🌟 Navigation Tabs แบบใช้ Link ของ Next.js */}
               <div className="flex bg-white rounded border border-slate-300 overflow-hidden text-sm font-medium">
                 <Link href="/inventory/master" className={`px-4 py-1.5 transition-colors border-r border-slate-300 flex items-center gap-2 ${pathname === '/inventory/master' ? 'bg-blue-100 text-blue-800' : 'hover:bg-slate-50'}`}>
                   <Warehouse size={14} /> Master
@@ -271,7 +323,7 @@ export default function MasterInventoryPage() {
                           {item.catalog_image ? (
                             <div onClick={() => setLinkModal({ isOpen: true, target: 'existing', stockItem: item })} className={`w-8 h-8 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm relative cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all`}>
                               <img src={item.catalog_image} alt="product" className="w-full h-full object-cover" />
-                              <div title={`เปลี่ยนรูป (SKU: ${item.catalog_sku})`} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                              <div title={`เปลี่ยนรูป`} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                                 <LinkIcon size={12} className="text-white" />
                               </div>
                             </div>
@@ -298,6 +350,10 @@ export default function MasterInventoryPage() {
                           <div className="flex justify-center gap-1">
                             <button onClick={() => openTransactionModal(item, 'in')} className="flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded text-xs font-medium"><PlusCircle size={12} /> IN</button>
                             <button onClick={() => openTransactionModal(item, 'out')} className="flex items-center gap-1 px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 rounded text-xs font-medium"><MinusCircle size={12} /> OUT</button>
+                            {/* 🟢 ปุ่มลบแถวมาแล้ว */}
+                            <button onClick={() => handleDeleteRow(item.id, item.item_name)} className="flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded text-xs font-medium" title="ลบแถว">
+                              <Trash size={12} /> ลบ
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -345,6 +401,27 @@ export default function MasterInventoryPage() {
               <button onClick={() => setLinkModal({ isOpen: false, target: 'existing', stockItem: null })} className="p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-full transition-colors"><X size={20} /></button>
             </div>
             
+            {/* 🟢 ส่วนที่กรอก URL ด้วยตัวเอง */}
+            <div className="p-4 border-b border-slate-200 bg-blue-50/60 flex flex-col gap-2">
+              <label className="text-xs font-bold text-slate-700">หรือวาง URL รูปภาพตรงนี้เลยก็ได้ครับนาย:</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="https://example.com/image.jpg" 
+                  value={manualUrl} 
+                  onChange={(e) => setManualUrl(e.target.value)} 
+                  className="flex-1 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:border-blue-500 outline-none"
+                />
+                <button 
+                  type="button" 
+                  onClick={handleManualUrlSubmit} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors border border-blue-700 whitespace-nowrap"
+                >
+                  ใช้รูปนี้
+                </button>
+              </div>
+            </div>
+
             <div className="p-4 border-b border-slate-100">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -435,7 +512,8 @@ export default function MasterInventoryPage() {
                   <div className="relative w-24 h-24 rounded-lg border border-slate-200 shadow-sm overflow-hidden group">
                     <img src={newItem.preview_image} alt="preview" className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <button type="button" onClick={() => setNewItem({...newItem, linked_variant_id: null, preview_image: ''})} className="text-white p-1 hover:text-red-400"><X size={20} /></button>
+                      {/* 🟢 แก้ปุ่มลบรูปแล้ว */}
+                      <button type="button" onClick={() => setNewItem({...newItem, catalog_image_url: '', preview_image: ''})} className="text-white p-1 hover:text-red-400"><X size={20} /></button>
                     </div>
                   </div>
                 ) : (
