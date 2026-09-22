@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Building2, Package,
   SearchCheck, ClipboardCheck, Sparkles, ImageIcon,
   Cloud, ImagePlus, UserPlus, HardDrive,
-  BookOpen, LogOut
+  BookOpen, FileText, LogOut
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { clearAdminTokenCookie, saveAdminTokenCookie } from '@/lib/admin-auth-cookie';
@@ -116,6 +116,7 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
       items: [
         { name: 'จัดการสินค้า', path: '/manage-products', icon: Package, color: 'blue', adminOnly: true },
         { name: 'จัดการคลังสินค้า', path: '/inventory/master', icon: ShoppingBag, color: 'blue', adminOnly: true }, 
+        { name: 'PI Record', path: '/pi-record', icon: FileText, color: 'blue', adminOnly: true },
         { name: 'ตรวจสอบข้อมูล', path: '/check-data', icon: SearchCheck, color: 'blue', adminOnly: true },
         { name: 'ตรวจสอบแผนงาน', path: '/check-visit-plans', icon: ClipboardCheck, color: 'blue', adminOnly: true },
       ]
