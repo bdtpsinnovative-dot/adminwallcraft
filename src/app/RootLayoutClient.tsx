@@ -134,7 +134,7 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
     {
       title: 'Team Management',
       items: [
-        { name: 'เพิ่มทีม', path: '/add-team', icon: UserPlus, color: 'blue', adminOnly: true },
+        { name: 'จัดการทีม & พนักงาน', path: '/add-team', icon: UserPlus, color: 'blue', adminOnly: true },
         { name: 'เพิ่มโปรเจค xlsx & csv', path: '/upload', icon: HardDrive, color: 'blue', adminOnly: true },
       ]
     }
