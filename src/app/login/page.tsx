@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { saveAdminTokenCookie } from '@/lib/admin-auth-cookie';
@@ -40,6 +40,18 @@ export default function LoginPage() {
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [activeLoggingEmail, setActiveLoggingEmail] = useState<string | null>(null);
+  const isMouseDownOnBackdrop = useRef(false);
+
+  // ─── Close modal on Escape key ───────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showAddModal) {
+        setShowAddModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showAddModal]);
 
   // ─── Check existing session ───────────────
   useEffect(() => {
@@ -361,10 +373,24 @@ export default function LoginPage() {
       {showAddModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
-          onClick={() => setShowAddModal(false)}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              isMouseDownOnBackdrop.current = true;
+            }
+          }}
+          onClick={(e) => {
+            if (isMouseDownOnBackdrop.current && e.target === e.currentTarget) {
+              setShowAddModal(false);
+            }
+            isMouseDownOnBackdrop.current = false;
+          }}
         >
           <div
             className="w-full max-w-[400px] bg-[#1A120B]/90 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 relative shadow-[0_40px_80px_-20px_rgba(0,0,0,0.9)]"
+            onMouseDown={(e) => {
+              isMouseDownOnBackdrop.current = false;
+              e.stopPropagation();
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <button

@@ -294,19 +294,143 @@ export async function POST(request: Request) {
 
         if (productError) throw new Error(`เกิดข้อผิดพลาดในการตรวจสอบสินค้า: ${productError.message}`);
 
-        if (finalProductId && row.qty && Number(row.qty) > 0) {
-          const insertPayload: any = { 
-            product_id: finalProductId, 
-            qty: Number(row.qty), 
-            created_by: user_id
-          };
-          if (row.date_in) insertPayload.date_in = row.date_in;
-          
-          const { error: inError } = await supabase.from('stock_in').insert([insertPayload]);
-          if (inError) throw new Error(`บันทึกรับเข้าไม่สำเร็จ: ${inError.message}`);
+        if (finalProductId) {
+          // 🖼️ จัดการรูปภาพสินค้า:
+          const cleanImageUrl = typeof row.image_url === 'string' ? row.image_url.trim() : '';
+          if (cleanImageUrl) {
+            // 1. ถ้ามี image_url ส่งมาจาก CSV ให้บันทึกลง stock_balance
+            await supabase
+              .from('stock_balance')
+              .update({ catalog_image_url: cleanImageUrl })
+              .eq('id', finalProductId);
+          } else {
+            // 2. ถ้าไม่มี image_url ตรวจสอบว่าสินค้ามีรูปอยู่แล้วหรือยัง
+            const { data: currentStock } = await supabase
+              .from('stock_balance')
+              .select('catalog_image_url')
+              .eq('id', finalProductId)
+              .maybeSingle();
+
+            if (!currentStock?.catalog_image_url) {
+              // พยายาม Auto-match จาก catalog (product_variants / products)
+              let matchedImage: string | null = null;
+              if (row.series) {
+                const { data: vMatch } = await supabase
+                  .from('product_variants')
+                  .select('variant_image')
+                  .ilike('sku', `%${row.series}%`)
+                  .not('variant_image', 'is', null)
+                  .limit(1)
+                  .maybeSingle();
+                if (vMatch?.variant_image) {
+                  matchedImage = vMatch.variant_image;
+                }
+              }
+
+              if (!matchedImage && (row.item_name || row.series)) {
+                const searchKey = row.item_name || row.series;
+                const { data: pMatch } = await supabase
+                  .from('products')
+                  .select('image_url')
+                  .or(`name.ilike.%${searchKey}%,collection.ilike.%${searchKey}%`)
+                  .not('image_url', 'is', null)
+                  .limit(1)
+                  .maybeSingle();
+                if (pMatch?.image_url) {
+                  matchedImage = pMatch.image_url;
+                }
+              }
+
+              if (matchedImage) {
+                await supabase
+                  .from('stock_balance')
+                  .update({ catalog_image_url: matchedImage })
+                  .eq('id', finalProductId);
+              }
+            }
+          }
+
+          // 📦 บันทึกรายการรับเข้า (stock_in)
+          if (row.qty && Number(row.qty) > 0) {
+            const insertPayload: any = { 
+              product_id: finalProductId, 
+              qty: Number(row.qty), 
+              created_by: user_id
+            };
+            if (row.date_in) insertPayload.date_in = row.date_in;
+            
+            const { error: inError } = await supabase.from('stock_in').insert([insertPayload]);
+            if (inError) throw new Error(`บันทึกรับเข้าไม่สำเร็จ: ${inError.message}`);
+          }
         }
       }
       return NextResponse.json({ success: true, message: 'นำเข้าข้อมูล CSV และอัปเดตสต็อกเรียบร้อย' });
+    }
+
+    // 🔔 Action: Broadcast แจ้งเตือนสินค้าเข้าสต็อกใหม่ไปยังทุกคนในทีม
+    if (action === 'broadcast_stock_notification') {
+      const titleMsg = body.title || '📦 มีสินค้าเข้าสต็อกใหม่!';
+      const bodyMsg = body.body || 'มีการอัปเดตสินค้าเข้าสต็อกแล้ว เช็คสต็อกล่าสุดได้ในแอป';
+
+      // 1. ดึงโปรไฟล์ผู้ใช้ทั้งหมดที่มี fcm_tokens
+      const { data: profiles, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, fcm_tokens')
+        .not('fcm_tokens', 'is', null);
+
+      if (profileErr) throw profileErr;
+
+      // 2. รวบรวม FCM tokens ทั้งหมด
+      const allTokens: string[] = [];
+      profiles?.forEach((p: any) => {
+        if (Array.isArray(p.fcm_tokens)) {
+          p.fcm_tokens.forEach((item: any) => {
+            if (item?.token && typeof item.token === 'string') {
+              allTokens.push(item.token);
+            }
+          });
+        }
+      });
+
+      // 3. บันทึกประวัติลงตาราง notifications
+      if (profiles && profiles.length > 0) {
+        const notifRows = profiles.map((p: any) => ({
+          recipient_id: p.id,
+          title: titleMsg,
+          body: bodyMsg,
+        }));
+        await supabase.from('notifications').insert(notifRows);
+      }
+
+      // 4. ส่ง Push Notification ผ่าน API กลาง
+      let sentCount = 0;
+      if (allTokens.length > 0) {
+        try {
+          const notifyRes = await fetch('https://www.wallcraftthailand.com/api/v1/send-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tokens: allTokens,
+              title: titleMsg,
+              body: bodyMsg,
+              data: {
+                type: 'stock_update',
+                screen: 'stock_management'
+              }
+            })
+          });
+          const notifyResult = await notifyRes.json();
+          sentCount = notifyResult.sentCount || allTokens.length;
+        } catch (fetchErr: any) {
+          console.error("FCM Broadcast Error:", fetchErr.message);
+        }
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `ส่งแจ้งเตือนเรียบร้อยแล้ว (${allTokens.length} อุปกรณ์)`, 
+        sentCount: allTokens.length 
+      });
     }
 
     return NextResponse.json({ success: false, message: 'ไม่พบ Action ที่ระบุ' }, { status: 400 });

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { Search, Warehouse, Inbox, Truck, Route, Boxes, Image as ImageIcon, Upload, X, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
+import { Search, Warehouse, Inbox, Truck, Route, Boxes, Image as ImageIcon, Upload, X, CheckCircle2, AlertCircle, FileText, Download, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -16,6 +16,8 @@ export default function InInventoryPage() {
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'success', title: '', message: '' });
   const [importModal, setImportModal] = useState({ isOpen: false, data: [] as any[] });
   const [isImporting, setIsImporting] = useState(false);
+  const [notifyPromptModal, setNotifyPromptModal] = useState({ isOpen: false, count: 0 });
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
   const currentUserId = null; // 🟢 รอเปลี่ยนเป็น ID ยูสเซอร์ตอนต่อระบบ Auth
 
   useEffect(() => {
@@ -81,6 +83,7 @@ export default function InInventoryPage() {
         
         const cols = lines[i].split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/); 
         const qty = cleanNum(cols[8]);
+        const imgUrl = cleanStr(cols[9]);
         
         if (qty > 0) {
           parsedData.push({
@@ -92,7 +95,8 @@ export default function InInventoryPage() {
             height_mm: cleanNum(cols[5]),
             width_mm: cleanNum(cols[6]),
             thickness_mm: cleanNum(cols[7]),
-            qty: qty
+            qty: qty,
+            image_url: imgUrl || null
           });
         }
       }
@@ -124,9 +128,11 @@ export default function InInventoryPage() {
       const result = await res.json();
       
       if (result.success) {
+        const importedCount = importModal.data.length;
         setImportModal({ isOpen: false, data: [] });
-        showAlert('success', 'นำเข้าสำเร็จ!', `บันทึกรายการรับเข้าจำนวน ${importModal.data.length} รายการเรียบร้อยแล้ว`);
         fetchData(); 
+        // 🔔 เปิด Modal ให้ผู้ใช้เลือกว่าจะส่งแจ้งเตือนหามือถือทุกคนหรือไม่
+        setNotifyPromptModal({ isOpen: true, count: importedCount });
       } else {
         showAlert('error', 'ล้มเหลว', result.message);
       }
@@ -136,6 +142,53 @@ export default function InInventoryPage() {
     } finally {
       setIsImporting(false);
     }
+  };
+
+  // 🔔 ฟังก์ชันสั่ง Broadcast แจ้งเตือนไปยังทุกคนในทีม
+  const handleBroadcastNotify = async () => {
+    setIsBroadcasting(true);
+    try {
+      const res = await fetch('/api/inventory-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'broadcast_stock_notification',
+          title: '📦 มีสินค้าเข้าสต็อกใหม่!',
+          body: 'มีการอัปเดตสินค้าเข้าสต็อกแล้ว เช็คสต็อกล่าสุดได้ในแอป'
+        })
+      });
+      const json = await res.json();
+      setNotifyPromptModal({ isOpen: false, count: 0 });
+      if (json.success) {
+        showAlert('success', 'ส่งแจ้งเตือนสำเร็จ!', `ระบบส่ง Push Notification ไปยังมือถือของทีมเรียบร้อยแล้ว (${json.sentCount || 0} เครื่อง)`);
+      } else {
+        showAlert('error', 'ส่งแจ้งเตือนไม่สำเร็จ', json.message);
+      }
+    } catch (e) {
+      console.error(e);
+      showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์แจ้งเตือนได้');
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
+
+  // 🟢 3. ฟังก์ชันดาวน์โหลด Template CSV
+  const downloadTemplate = () => {
+    const headers = 'date_in,series,item_name,color_name,material,height_mm,width_mm,thickness_mm,qty,image_url';
+    const example1 = '08/10/2026,WS-001,ไม้สักธรรมชาติ,น้ำตาล,สัก,200,100,30,5,https://images.unsplash.com/photo-1513694203232-719a280e022f';
+    const example2 = '08/10/2026,WS-002,ไม้มะค่า,ดำ,มะค่า,150,80,25,3,';
+    const example3 = '08/10/2026,WS-003,ไม้แดง,แดง,ไม้แดง,180,90,28,0,';
+    const csvContent = [headers, example1, example2, example3].join('\n');
+
+    const BOM = '\uFEFF'; // UTF-8 BOM เพื่อให้ Excel แสดงภาษาไทยถูกต้อง
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'inventory_in_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const filteredData = data.filter(item => 
@@ -187,12 +240,20 @@ export default function InInventoryPage() {
               </div>
               
               <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+              <button
+                onClick={downloadTemplate}
+                className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded text-sm font-medium whitespace-nowrap transition-colors border border-slate-300 shadow-sm"
+                title="ดาวน์โหลดไฟล์ Template CSV สำหรับอัปโหลด"
+              >
+                <Download size={14} className="text-green-600" /> Template CSV
+              </button>
               <button 
                 onClick={() => fileInputRef.current?.click()} 
                 className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium whitespace-nowrap transition-colors border border-blue-700 shadow-sm"
               >
                 <Upload size={14} /> อัปโหลด Excel (CSV)
               </button>
+
             </div>
           </div>
         </div>
@@ -298,6 +359,7 @@ export default function InInventoryPage() {
                 <thead className="bg-slate-800 text-white">
                   <tr>
                     <th className="px-2 py-2 border-b border-slate-700">ลำดับ</th>
+                    <th className="px-2 py-2 border-b border-slate-700 text-center w-12">รูป</th>
                     <th className="px-2 py-2 border-b border-slate-700">Series</th>
                     <th className="px-2 py-2 border-b border-slate-700">ชื่อสินค้า (Item)</th>
                     <th className="px-2 py-2 border-b border-slate-700">Color</th>
@@ -310,6 +372,15 @@ export default function InInventoryPage() {
                   {importModal.data.map((row, idx) => (
                     <tr key={idx} className="hover:bg-blue-50/50">
                       <td className="px-2 py-1.5 text-center text-slate-500">{idx + 1}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        {row.image_url ? (
+                          <div className="w-7 h-7 rounded border border-slate-200 overflow-hidden mx-auto shadow-sm">
+                            <img src={row.image_url} alt="preview" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <span className="text-slate-300 text-xs">-</span>
+                        )}
+                      </td>
                       <td className="px-2 py-1.5">{row.series || '-'}</td>
                       <td className="px-2 py-1.5 font-medium text-slate-800">{row.item_name}</td>
                       <td className="px-2 py-1.5">{row.color_name || '-'}</td>
@@ -321,7 +392,7 @@ export default function InInventoryPage() {
                 </tbody>
               </table>
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-                <strong>💡 ข้อควรทราบ:</strong> ระบบจะตรวจสอบจากสเปคสินค้า (Series, Color, Material, Size) หากไม่พบในระบบ <b>ระบบจะสร้างเป็นสินค้าใหม่ (Master) ให้โดยอัตโนมัติ</b> และทำการรับเข้าสต็อกให้ทันที
+                <strong>💡 ข้อควรทราบ:</strong> ระบบจะตรวจสอบจากสเปคสินค้า (Series, Color, Material, Size) หากไม่พบในระบบ <b>ระบบจะสร้างเป็นสินค้าใหม่ (Master) พร้อมผูกรูปภาพให้อัตโนมัติ</b> และทำการรับเข้าสต็อกให้ทันที
               </div>
             </div>
 
@@ -333,6 +404,57 @@ export default function InInventoryPage() {
                 {isImporting ? <span className="animate-pulse">กำลังประมวลผล...</span> : <><CheckCircle2 size={16} /> ยืนยันการนำเข้า</>}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔔 Modal ถามเพื่อส่งแจ้งเตือนหามือถือทุกคน */}
+      {notifyPromptModal.isOpen && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200 text-center flex flex-col items-center">
+            
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-4 ring-8 ring-blue-50/50">
+              <Bell size={32} className="animate-bounce" />
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-800 mb-1">นำเข้าสต็อกสำเร็จแล้ว! 🎉</h3>
+            <p className="text-slate-500 text-sm mb-4">
+              บันทึกสินค้าใหม่จำนวน <span className="font-bold text-blue-600">{notifyPromptModal.count}</span> รายการ เรียบร้อยแล้ว
+            </p>
+
+            <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-6 text-left">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">ตัวอย่างข้อความแจ้งเตือน</div>
+              <div className="text-sm font-bold text-slate-800">📦 มีสินค้าเข้าสต็อกใหม่!</div>
+              <div className="text-xs text-slate-600 mt-0.5">มีการอัปเดตสินค้าเข้าสต็อกแล้ว เช็คสต็อกล่าสุดได้ในแอป</div>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-5">
+              ต้องการส่งแจ้งเตือน (Push Notification) ไปยังมือถือของทุกคนในทีมด้วยหรือไม่?
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <button
+                disabled={isBroadcasting}
+                onClick={() => setNotifyPromptModal({ isOpen: false, count: 0 })}
+                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl text-sm transition-colors disabled:opacity-50"
+              >
+                ไม่ส่ง / ปิด
+              </button>
+              <button
+                disabled={isBroadcasting}
+                onClick={handleBroadcastNotify}
+                className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isBroadcasting ? (
+                  <span className="animate-pulse">กำลังส่ง...</span>
+                ) : (
+                  <>
+                    <Bell size={16} /> ส่งแจ้งเตือนทุกคน
+                  </>
+                )}
+              </button>
+            </div>
+
           </div>
         </div>
       )}
