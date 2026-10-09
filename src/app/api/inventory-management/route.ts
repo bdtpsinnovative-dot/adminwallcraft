@@ -433,6 +433,45 @@ export async function POST(request: Request) {
       });
     }
 
+    // 🗑️ Action: ล้างข้อมูลสต็อก (Reset เพื่อเตรียมลงข้อมูลใหม่)
+    if (action === 'clear_inventory_data') {
+      const mode = body.mode || 'all'; // 'all' (รีเซ็ตคลัง 100%) หรือ 'in_only' (ล้างเฉพาะประวัติ In)
+
+      if (mode === 'in_only') {
+        const { error: inError } = await supabase
+          .from('stock_in')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (inError) throw inError;
+
+        return NextResponse.json({ success: true, message: 'ล้างประวัติการรับเข้า (Stock In) เรียบร้อยแล้ว' });
+      } else {
+        // ล้าง 100%: ลบประวัติ stock_in และ stock_out ก่อน แล้วจึงลบ stock_balance
+        const { error: inError } = await supabase
+          .from('stock_in')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (inError) throw inError;
+
+        const { error: outError } = await supabase
+          .from('stock_out')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (outError) throw outError;
+
+        const { error: balError } = await supabase
+          .from('stock_balance')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (balError) throw balError;
+
+        return NextResponse.json({ 
+          success: true, 
+          message: 'ล้างข้อมูลคลังสินค้าและประวัติทั้งหมดเรียบร้อยแล้ว (สต็อกว่างเปล่า พร้อมลงข้อมูลชุดใหม่)' 
+        });
+      }
+    }
+
     return NextResponse.json({ success: false, message: 'ไม่พบ Action ที่ระบุ' }, { status: 400 });
 
   } catch (error: any) {

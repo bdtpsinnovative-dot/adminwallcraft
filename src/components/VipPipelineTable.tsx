@@ -485,6 +485,26 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
   }, [projects, tab, sizeFilter, sortArea]); 
 
   const totalPages = useMemo(() => Math.ceil(displayProjects.length / pageSize) || 1, [displayProjects.length]);
+
+  const tabCounts = useMemo(() => {
+    let vip = 0;
+    let withProj = 0;
+    let withoutProj = 0;
+    projects.forEach(proj => {
+      const isVip = proj.is_important === true || proj.is_important === 'true' || proj.is_important === 1;
+      const pName = proj.project_name ? proj.project_name.trim() : "";
+      const isNoName = !pName || pName === "" || pName === "-" || pName.includes("ไม่มีการระบุโครงการ") || pName.includes("ไม่ระบุ");
+      if (isVip) vip++;
+      if (!isNoName) withProj++;
+      else withoutProj++;
+    });
+    return {
+      vip,
+      all: projects.length,
+      withProj,
+      withoutProj
+    };
+  }, [projects]);
   
   const paginatedProjects = useMemo(() => {
     const startIdx = (currentPage - 1) * pageSize;
@@ -560,11 +580,11 @@ export default function VipPipelineTable({ projects, profilesMap, salesStats, cu
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => handleFilterChange(setTab, 1)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${tab === 1 ? 'bg-yellow-400 text-yellow-900 border-yellow-400 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                      <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว
+                      <Star size={14} fill={tab === 1 ? "currentColor" : "none"} /> โครงการติดดาว ({tabCounts.vip})
                     </button>
-                    <button onClick={() => handleFilterChange(setTab, 2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>ทั้งหมด</button>
-                    <button onClick={() => handleFilterChange(setTab, 3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>ทั้งหมด แบบมีโครงการ</button>
-                    <button onClick={() => handleFilterChange(setTab, 4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-rose-50'}`}>ทั้งหมด แบบไม่มีโครงการ</button>
+                    <button onClick={() => handleFilterChange(setTab, 2)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 2 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>เช็คอินทั้งหมด ({tabCounts.all})</button>
+                    <button onClick={() => handleFilterChange(setTab, 3)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 3 ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>มีโครงการ ({tabCounts.withProj})</button>
+                    <button onClick={() => handleFilterChange(setTab, 4)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${tab === 4 ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-rose-50'}`}>ไม่มีโครงการ ({tabCounts.withoutProj})</button>
                   </div>
 
                   <div className="flex items-center gap-2 border-l border-slate-200 pl-4">

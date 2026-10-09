@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
-  Calendar, Users, Map as MapIcon, Activity, AlertCircle, Star, Target, Database, MapPin, Building2, Scaling,
+  Calendar, Users, Map as MapIcon, Activity, Star, Target, Database, MapPin, Building2, Scaling,
   ChevronRight, Smartphone, FileText, Loader2, Folder, Search, Filter as FilterIcon, UserCheck
 } from 'lucide-react';
 import Link from 'next/link';
@@ -15,6 +15,7 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import CompanyCandlestickChart from '@/components/CompanyCandlestickChart';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import WeeklyVisitPlanner from '@/components/WeeklyVisitPlanner';
+import ExportExcelButton from '@/components/ExportExcelButton';
 
 interface Props {
   currentUserRole: string;
@@ -473,9 +474,29 @@ export default function DashboardClientContainer({
   const currentYear = thaiTime.getUTCFullYear();
   const currentDate = thaiTime.getUTCDate();
 
+  const isNoProject = (name: string | null | undefined) => {
+    if (!name) return true;
+    const pName = name.trim();
+    return (
+      pName === "" ||
+      pName === "-" ||
+      pName.includes("ไม่มีการระบุโครงการ") ||
+      pName.includes("ไม่ระบุโครงการ") ||
+      pName === "ไม่ระบุ" ||
+      pName === "Unspecified" ||
+      pName === "Unknown"
+    );
+  };
+
   const extraCalculatedStats = useMemo(() => {
     let monthOrders = 0;
     let todayOrders = 0;
+    let todayCheckins = 0;
+    let todayActualProjects = 0;
+    let actualProjectsCount = 0;
+    let noProjectCount = 0;
+    let appCheckinsCount = 0;
+    let csvCheckinsCount = 0;
     let importantProjectsCount = 0;
     const pendingSyncOrderIds = new Set();
     
@@ -494,6 +515,19 @@ export default function DashboardClientContainer({
       const area = Number(proj.area_sqm) || 0;
       const isSynced = order?.is_synced ?? true;
       
+      const hasActualProject = !isNoProject(proj.project_name);
+      if (hasActualProject) {
+        actualProjectsCount++;
+      } else {
+        noProjectCount++;
+      }
+
+      if (order?.audit_log) {
+        appCheckinsCount++;
+      } else {
+        csvCheckinsCount++;
+      }
+
       if (proj.is_important) importantProjectsCount++;
 
       const pTypeId = proj.project_type_id;
@@ -533,7 +567,11 @@ export default function DashboardClientContainer({
         
         if (projThai.getUTCFullYear() === currentYear && projThai.getUTCMonth() === currentMonth) {
           monthOrders++;
-          if (projThai.getUTCDate() === currentDate) todayOrders++;
+          if (projThai.getUTCDate() === currentDate) {
+            todayOrders++;
+            todayCheckins++;
+            if (hasActualProject) todayActualProjects++;
+          }
         }
 
         const day = projThai.getUTCDate().toString().padStart(2, '0');
@@ -561,6 +599,12 @@ export default function DashboardClientContainer({
     return {
       monthOrders,
       todayOrders,
+      todayCheckins,
+      todayActualProjects,
+      actualProjectsCount,
+      noProjectCount,
+      appCheckinsCount,
+      csvCheckinsCount,
       importantProjectsCount,
       pendingSync,
       lineChartData,
@@ -613,7 +657,9 @@ export default function DashboardClientContainer({
   const vipProjects = useMemo(() => allActiveProjects.filter(p => p.is_important), [allActiveProjects]);
 
   const dashboardSummary = useMemo(() => ({
-    totalProjects: activeProjectsCount,
+    totalCheckins: activeProjectsCount,
+    totalProjects: extraCalculatedStats.actualProjectsCount,
+    noProjectCheckins: extraCalculatedStats.noProjectCount,
     totalArea: totalAreaSqm,
     vipCount: extraCalculatedStats.importantProjectsCount,
     pendingSyncCount: extraCalculatedStats.pendingSync,
@@ -688,7 +734,7 @@ export default function DashboardClientContainer({
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4 w-full">
         <div className="flex-none">
-          <div className="flex items-center gap-3 text-indigo-700 mb-1">
+          <div className="flex items-center gap-3 text-indigo-700 mb-1 flex-wrap">
             <LayoutDashboard size={28} className="stroke-[2.5]" />
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
               {variant === 'advance' ? 'Dashboard Advance' : 'Enterprise Overview'}
@@ -700,6 +746,20 @@ export default function DashboardClientContainer({
             >
               <Clock size={14} /> รีเฟรชข้อมูล
             </button>
+
+            {/* 📥 ปุ่มโหลดข้อมูล (แสดงและอนุญาตเฉพาะ Admin) */}
+            {currentUserRole === 'admin' && (
+              <ExportExcelButton
+                currentUserRole={currentUserRole}
+                currentFilteredProjects={allActiveProjects}
+                profiles={profiles || []}
+                teams={teams || []}
+                projectTypes={projectTypes || []}
+                productCategories={productCategories || []}
+                customerTypes={customerTypes || []}
+                dateRangeStr={`${startParam || '90 วันย้อนหลัง'} - ${endParam || 'วันนี้'}`}
+              />
+            )}
           </div>
           <p className="text-slate-500 text-sm flex items-center gap-1.5">
             <Activity size={14} /> วิเคราะห์ข้อมูลทุกมิติ ทะลวงฐานข้อมูลแบบเรียลไทม์
@@ -1032,52 +1092,130 @@ export default function DashboardClientContainer({
         </>
       ) : (
         <>
-          {/* กล่องตัวเลข 4 กล่อง (ของเดิม) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">PROJETCS ทั้งหมด</p>
-              <h2 className="text-3xl font-extrabold text-slate-800">{activeProjectsCount.toLocaleString()}</h2>
+          {/* 🌟 กล่องตัวเลขสรุป 5 มิติหลัก (แยกการเช็คอิน vs จำนวนโครงการจริง ตามแบบ App สรุปแอดมิน) 🌟 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-5 mb-6">
+            
+            {/* กล่องที่ 1: การเช็คอินทั้งหมด (Total Check-ins) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-1">
+                    การเช็คอินทั้งหมด
+                  </p>
+                  <h2 className="text-3xl font-black text-slate-800 tracking-tight">
+                    {activeProjectsCount.toLocaleString()}
+                  </h2>
+                </div>
+                <div className="bg-emerald-100 p-2.5 rounded-xl text-emerald-600 shadow-xs">
+                  <MapPin size={22} className="stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-500">
+                <span className="flex items-center gap-1 text-emerald-600 font-bold">
+                  <Smartphone size={13} /> App: {extraCalculatedStats.appCheckinsCount.toLocaleString()}
+                </span>
+                <span className="flex items-center gap-1 text-slate-400">
+                  <FileText size={13} /> File: {extraCalculatedStats.csvCheckinsCount.toLocaleString()}
+                </span>
+              </div>
             </div>
-            <div className="bg-blue-100 p-2.5 rounded-lg text-blue-600"><ShoppingCart size={22} /></div>
-          </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-            <TrendingUp size={14} /> 
-            <span>+{extraCalculatedStats.todayOrders} โปรเจกต์ใหม่วันนี้</span>
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">โปรเจกต์สำคัญ (VIP)</p>
-              <h2 className="text-3xl font-extrabold text-rose-600">{extraCalculatedStats.importantProjectsCount.toLocaleString()}</h2>
+            {/* กล่องที่ 2: จำนวนโครงการจริง (Actual Projects) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-1">
+                    จำนวนโครงการจริง
+                  </p>
+                  <h2 className="text-3xl font-black text-blue-600 tracking-tight">
+                    {extraCalculatedStats.actualProjectsCount.toLocaleString()}
+                  </h2>
+                </div>
+                <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600 shadow-xs">
+                  <Building2 size={22} className="stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                <span className="flex items-center gap-1 text-blue-600 font-bold">
+                  <TrendingUp size={13} /> +{extraCalculatedStats.todayActualProjects} วันนี้
+                </span>
+                <span className="text-slate-400 text-[11px]">
+                  {activeProjectsCount > 0 ? `${Math.round((extraCalculatedStats.actualProjectsCount / activeProjectsCount) * 100)}%` : '0%'} ของการเช็คอิน
+                </span>
+              </div>
             </div>
-            <div className="bg-rose-100 p-2.5 rounded-lg text-rose-600"><Star size={22} className="fill-rose-600" /></div>
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">พื้นที่ดำเนินการ (ตร.ม.)</p>
-              <h2 className="text-3xl font-extrabold text-slate-800">{totalAreaSqm.toLocaleString()}</h2>
+            {/* กล่องที่ 3: เช็คอินแบบยังไม่มีโครงการ (Visits without Project) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-1">
+                    พบลูกค้า (ไม่มีโครงการ)
+                  </p>
+                  <h2 className="text-3xl font-black text-amber-600 tracking-tight">
+                    {extraCalculatedStats.noProjectCount.toLocaleString()}
+                  </h2>
+                </div>
+                <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600 shadow-xs">
+                  <UserCheck size={22} className="stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                <span className="text-amber-700 font-bold text-[11px]">
+                  โอกาสติดตามงาน
+                </span>
+                <span className="text-slate-400 text-[11px]">
+                  {activeProjectsCount > 0 ? `${Math.round((extraCalculatedStats.noProjectCount / activeProjectsCount) * 100)}%` : '0%'} ของการเช็คอิน
+                </span>
+              </div>
             </div>
-            <div className="bg-purple-100 p-2.5 rounded-lg text-purple-600"><MapIcon size={22} /></div>
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">รออัปเดต / ขาดเชื่อมต่อ</p>
-              <h2 className="text-3xl font-extrabold text-orange-600">{extraCalculatedStats.pendingSync.toLocaleString()}</h2>
+            {/* กล่องที่ 4: โครงการสำคัญ VIP (VIP Projects) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-1">
+                    โปรเจกต์สำคัญ (VIP)
+                  </p>
+                  <h2 className="text-3xl font-black text-rose-600 tracking-tight">
+                    {extraCalculatedStats.importantProjectsCount.toLocaleString()}
+                  </h2>
+                </div>
+                <div className="bg-rose-100 p-2.5 rounded-xl text-rose-600 shadow-xs">
+                  <Star size={22} className="fill-rose-600" />
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center text-xs font-semibold text-rose-600">
+                <span>โครงการติดดาวดูแลพิเศษ</span>
+              </div>
             </div>
-            <div className="bg-orange-100 p-2.5 rounded-lg text-orange-600"><AlertCircle size={22} /></div>
+
+            {/* กล่องที่ 5: พื้นที่ดำเนินการรวม ตร.ม. (Total Area SQM) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-1">
+                    พื้นที่ดำเนินการ (ตร.ม.)
+                  </p>
+                  <h2 className="text-3xl font-black text-purple-600 tracking-tight">
+                    {totalAreaSqm.toLocaleString()}
+                  </h2>
+                </div>
+                <div className="bg-purple-100 p-2.5 rounded-xl text-purple-600 shadow-xs">
+                  <Scaling size={22} className="stroke-[2.5]" />
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-purple-600">
+                <span>รวมทุกโครงการในระบบ</span>
+                <span className="text-slate-400 text-[11px]">
+                  {extraCalculatedStats.actualProjectsCount > 0 
+                    ? `เฉลี่ย ${Math.round(totalAreaSqm / extraCalculatedStats.actualProjectsCount)} ตร.ม./งาน` 
+                    : '-'}
+                </span>
+              </div>
+            </div>
+
           </div>
-        </div>
-      </div>
 
       <DashboardCharts 
         lineData={extraCalculatedStats.lineChartData} 

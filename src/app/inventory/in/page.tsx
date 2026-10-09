@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { Search, Warehouse, Inbox, Truck, Route, Boxes, Image as ImageIcon, Upload, X, CheckCircle2, AlertCircle, FileText, Download, Bell } from 'lucide-react';
+import { Search, Warehouse, Inbox, Truck, Route, Boxes, Image as ImageIcon, Upload, X, CheckCircle2, AlertCircle, FileText, Download, Bell, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -18,6 +18,8 @@ export default function InInventoryPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [notifyPromptModal, setNotifyPromptModal] = useState({ isOpen: false, count: 0 });
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [clearModal, setClearModal] = useState({ isOpen: false, mode: 'all' as 'all' | 'in_only', confirmText: '' });
+  const [isClearing, setIsClearing] = useState(false);
   const currentUserId = null; // 🟢 รอเปลี่ยนเป็น ID ยูสเซอร์ตอนต่อระบบ Auth
 
   useEffect(() => {
@@ -172,8 +174,41 @@ export default function InInventoryPage() {
     }
   };
 
+  // 🗑️ ฟังก์ชันล้างข้อมูลสต็อก
+  const handleClearData = async () => {
+    if (clearModal.confirmText.trim().toUpperCase() !== 'DELETE') {
+      showAlert('error', 'ยืนยันไม่ถูกต้อง', 'กรุณาพิมพ์คำว่า DELETE ตัวพิมพ์ใหญ่ในช่องยืนยันเพื่อล้างข้อมูลครับ');
+      return;
+    }
+
+    setIsClearing(true);
+    try {
+      const res = await fetch('/api/inventory-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'clear_inventory_data',
+          mode: clearModal.mode
+        })
+      });
+      const result = await res.json();
+      setClearModal({ isOpen: false, mode: 'all', confirmText: '' });
+      if (result.success) {
+        showAlert('success', 'ล้างข้อมูลสำเร็จ!', result.message);
+        fetchData();
+      } else {
+        showAlert('error', 'ล้มเหลว', result.message);
+      }
+    } catch (e) {
+      console.error(e);
+      showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   // 🟢 3. ฟังก์ชันดาวน์โหลด Template CSV
+
   const downloadTemplate = () => {
     const headers = 'date_in,series,item_name,color_name,material,height_mm,width_mm,thickness_mm,qty,image_url';
     const example1 = '08/10/2026,WS-001,ไม้สักธรรมชาติ,น้ำตาล,สัก,200,100,30,5,https://images.unsplash.com/photo-1513694203232-719a280e022f';
@@ -253,6 +288,14 @@ export default function InInventoryPage() {
               >
                 <Upload size={14} /> อัปโหลด Excel (CSV)
               </button>
+              <button
+                onClick={() => setClearModal({ isOpen: true, mode: 'all', confirmText: '' })}
+                className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 px-3 py-1.5 rounded text-sm font-medium whitespace-nowrap transition-colors border border-rose-200 shadow-sm"
+                title="ล้างข้อมูลสต็อก เพื่อลงข้อมูลใหม่"
+              >
+                <Trash2 size={14} className="text-rose-600" /> ล้างข้อมูล
+              </button>
+
 
             </div>
           </div>
@@ -450,6 +493,117 @@ export default function InInventoryPage() {
                 ) : (
                   <>
                     <Bell size={16} /> ส่งแจ้งเตือนทุกคน
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ Modal ยืนยันการล้างข้อมูลสต็อกสินค้า */}
+      {clearModal.isOpen && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-rose-200 text-left flex flex-col">
+            
+            <div className="flex items-center gap-3 text-rose-600 mb-2">
+              <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">ล้างข้อมูลสต็อกสินค้า (Clear Data)</h3>
+                <p className="text-xs text-slate-500">เลือกรูปแบบที่ต้องการล้างข้อมูล เพื่อเตรียมนำเข้าชุดใหม่</p>
+              </div>
+            </div>
+
+            {/* เลือกระดับการล้างข้อมูล */}
+            <div className="space-y-3 my-4">
+              <label 
+                onClick={() => setClearModal({ ...clearModal, mode: 'all' })}
+                className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  clearModal.mode === 'all' 
+                    ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-200' 
+                    : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input 
+                  type="radio" 
+                  name="clearMode" 
+                  checked={clearModal.mode === 'all'} 
+                  onChange={() => setClearModal({ ...clearModal, mode: 'all' })} 
+                  className="mt-1 text-rose-600 focus:ring-rose-500"
+                />
+                <div>
+                  <div className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    🔥 ล้างสต็อกใหม่ทั้งหมดทั้งระบบ (Reset 100%)
+                    <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-semibold">แนะนำ</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    ลบสินค้าหลัก (Master), ประวัติรับเข้า (In), และประวัติเบิก (Out) สต็อกจะว่างเปล่า 0 ชิ้น พร้อมสำหรับการนำเข้า CSV ชุดใหม่
+                  </div>
+                </div>
+              </label>
+
+              <label 
+                onClick={() => setClearModal({ ...clearModal, mode: 'in_only' })}
+                className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  clearModal.mode === 'in_only' 
+                    ? 'border-amber-500 bg-amber-50/60 ring-2 ring-amber-200' 
+                    : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input 
+                  type="radio" 
+                  name="clearMode" 
+                  checked={clearModal.mode === 'in_only'} 
+                  onChange={() => setClearModal({ ...clearModal, mode: 'in_only' })} 
+                  className="mt-1 text-amber-600 focus:ring-amber-500"
+                />
+                <div>
+                  <div className="text-sm font-bold text-slate-800">
+                    📦 ล้างเฉพาะประวัติรับเข้า (Stock In เท่านั้น)
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    ลบเฉพาะประวัติการนำเข้าในหน้านี้ (รายการสินค้าและรูปภาพใน Master ยังคงอยู่)
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* ช่องพิมพ์ยืนยัน DELETE */}
+            <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-3.5 mb-5">
+              <div className="text-xs font-semibold text-rose-800 mb-1.5 flex items-center gap-1.5">
+                <AlertCircle size={14} /> พิมพ์คำว่า <b className="underline tracking-wider">DELETE</b> เพื่อยืนยันการล้างข้อมูล
+              </div>
+              <input
+                type="text"
+                placeholder="พิมพ์ DELETE ที่นี่..."
+                value={clearModal.confirmText}
+                onChange={(e) => setClearModal({ ...clearModal, confirmText: e.target.value })}
+                className="w-full bg-white border border-rose-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-400"
+              />
+            </div>
+
+            {/* ปุ่มกด */}
+            <div className="flex justify-end gap-2.5">
+              <button
+                disabled={isClearing}
+                onClick={() => setClearModal({ isOpen: false, mode: 'all', confirmText: '' })}
+                className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl text-sm transition-colors disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                disabled={isClearing || clearModal.confirmText.trim().toUpperCase() !== 'DELETE'}
+                onClick={handleClearData}
+                className="py-2 px-5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isClearing ? (
+                  <span className="animate-pulse">กำลังล้างข้อมูล...</span>
+                ) : (
+                  <>
+                    <Trash2 size={16} /> ยืนยันล้างข้อมูล
                   </>
                 )}
               </button>
