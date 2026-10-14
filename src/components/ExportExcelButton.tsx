@@ -46,36 +46,127 @@ export default function ExportExcelButton({
   const [exportProgress, setExportProgress] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // State สำหรับโหลดข้อมูล Master หากไม่ได้ส่ง Props เข้ามา
+  const [loadedProfiles, setLoadedProfiles] = useState<any[]>(profiles);
+  const [loadedTeams, setLoadedTeams] = useState<any[]>(teams);
+  const [loadedProjectTypes, setLoadedProjectTypes] = useState<any[]>(projectTypes);
+  const [loadedProductCategories, setLoadedProductCategories] = useState<any[]>(productCategories);
+  const [loadedCustomerTypes, setLoadedCustomerTypes] = useState<any[]>(customerTypes);
+
+  // ดึง Master Data อัตโนมัติหากหน้าเรียกใช้ไม่ได้ส่ง props มา (เช่น หน้า checkins หรือ companies)
+  React.useEffect(() => {
+    if (loadedProfiles.length === 0) {
+      supabase.from('profiles').select('id, full_name').then(({ data }) => {
+        if (data) setLoadedProfiles(data);
+      });
+    }
+    if (loadedTeams.length === 0) {
+      supabase.from('teams').select('id, team_name').then(({ data }) => {
+        if (data) setLoadedTeams(data);
+      });
+    }
+    if (loadedProjectTypes.length === 0) {
+      supabase.from('project_types').select('id, name').then(({ data }) => {
+        if (data) setLoadedProjectTypes(data);
+      });
+    }
+    if (loadedProductCategories.length === 0) {
+      supabase.from('product_categories').select('id, name').then(({ data }) => {
+        if (data) setLoadedProductCategories(data);
+      });
+    }
+    if (loadedCustomerTypes.length === 0) {
+      supabase.from('customer_types').select('id, name').then(({ data }) => {
+        if (data) setLoadedCustomerTypes(data);
+      });
+    }
+  }, []);
+
+  // ฟังก์ชันแยก Order ที่มี projects ซ้อนอยู่ ให้กลายเป็นรายการโปรเจกต์รายตัว (สำหรับหน้า Check-ins และ Companies)
+  const extractProjectsFromOrders = (orders: any[]) => {
+    return orders.flatMap((order: any) => {
+      if (Array.isArray(order.projects) && order.projects.length > 0) {
+        return order.projects.map((proj: any) => ({
+          id: proj.id || proj.projectId || order.orderId || order.id,
+          project_name: proj.projectName || proj.project_name || 'ไม่มีการระบุโครงการ',
+          area_sqm: Number(proj.area ?? proj.area_sqm) || 0,
+          project_type_name: proj.projectType || proj.project_types?.name || proj.project_type_name || '-',
+          product_category_name: proj.categoryName || proj.product_category_name || '-',
+          interest_level: proj.interestLevel ?? proj.interest_level ?? '-',
+          sales_note: proj.note ?? proj.sales_note ?? '',
+          project_note: proj.projectNote ?? proj.project_note ?? '',
+          customer_name: order.customerName || order.customer_name || '-',
+          phone: order.phone || '-',
+          sales_name: order.salesName || order.salesEmail || 'ไม่ระบุ',
+          team_name: order.teamName || 'ทีมไม่ระบุ',
+          company_name: order.companyName || '-',
+          source_name: order.source || (order.isCsv ? 'File Import' : (order.auditLog ? 'Mobile App (ลงพื้นที่)' : 'File Import')),
+          created_at: order.createdAt || order.created_at || proj.created_at,
+          is_important: Boolean(proj.is_important || proj.isVip),
+          account_developer: proj.stakeholders?.devAcc || proj.account_developer || '',
+          contact_developer: proj.stakeholders?.devCont || proj.contact_developer || '',
+          account_architecture: proj.stakeholders?.archAcc || proj.account_architecture || '',
+          contact_architecture: proj.stakeholders?.archCont || proj.contact_architecture || '',
+          account_interior: proj.stakeholders?.intAcc || proj.account_interior || '',
+          contact_interior: proj.stakeholders?.intCont || proj.contact_interior || '',
+          account_contractor: proj.stakeholders?.contAcc || proj.account_contractor || '',
+          contact_contractor: proj.stakeholders?.contCont || proj.contact_contractor || '',
+          lat: order.auditLog?.location?.lat,
+          lng: order.auditLog?.location?.lng,
+        }));
+      }
+      return [order];
+    });
+  };
+
+  // รวมรายการที่กรองอยู่ในปัจจุบันให้ถูกต้องเสมอ ไม่ว่า props จะส่งมาเป็น currentFilteredProjects หรือ ordersData
+  const filteredProjectsList = useMemo(() => {
+    if (currentFilteredProjects && currentFilteredProjects.length > 0) {
+      return currentFilteredProjects;
+    }
+    if (ordersData && ordersData.length > 0) {
+      return extractProjectsFromOrders(ordersData);
+    }
+    return [];
+  }, [currentFilteredProjects, ordersData]);
+
+  const filteredCount = filteredProjectsList.length;
+
   // เตรียม Maps สำหรับจับคู่ ID กับชื่อ
   const profileMap = useMemo(() => {
     const map: Record<string, string> = {};
-    profiles.forEach((p: any) => { if (p?.id) map[p.id] = p.full_name; });
+    const list = loadedProfiles.length > 0 ? loadedProfiles : profiles;
+    list.forEach((p: any) => { if (p?.id) map[p.id] = p.full_name; });
     return map;
-  }, [profiles]);
+  }, [loadedProfiles, profiles]);
 
   const teamMap = useMemo(() => {
     const map: Record<string, string> = {};
-    teams.forEach((t: any) => { if (t?.id) map[t.id] = t.team_name; });
+    const list = loadedTeams.length > 0 ? loadedTeams : teams;
+    list.forEach((t: any) => { if (t?.id) map[t.id] = t.team_name; });
     return map;
-  }, [teams]);
+  }, [loadedTeams, teams]);
 
   const projectTypeMap = useMemo(() => {
     const map: Record<string, string> = {};
-    projectTypes.forEach((pt: any) => { if (pt?.id) map[pt.id] = pt.name; });
+    const list = loadedProjectTypes.length > 0 ? loadedProjectTypes : projectTypes;
+    list.forEach((pt: any) => { if (pt?.id) map[pt.id] = pt.name; });
     return map;
-  }, [projectTypes]);
+  }, [loadedProjectTypes, projectTypes]);
 
   const productCategoryMap = useMemo(() => {
     const map: Record<string, string> = {};
-    productCategories.forEach((pc: any) => { if (pc?.id) map[pc.id] = pc.name; });
+    const list = loadedProductCategories.length > 0 ? loadedProductCategories : productCategories;
+    list.forEach((pc: any) => { if (pc?.id) map[pc.id] = pc.name; });
     return map;
-  }, [productCategories]);
+  }, [loadedProductCategories, productCategories]);
 
   const customerTypeMap = useMemo(() => {
     const map: Record<string, string> = {};
-    customerTypes.forEach((ct: any) => { if (ct?.id) map[ct.id] = ct.name; });
+    const list = loadedCustomerTypes.length > 0 ? loadedCustomerTypes : customerTypes;
+    list.forEach((ct: any) => { if (ct?.id) map[ct.id] = ct.name; });
     return map;
-  }, [customerTypes]);
+  }, [loadedCustomerTypes, customerTypes]);
 
   // ฟังก์ชันจัดฟอร์แมตวันและเวลาไทย (UTC+7)
   const formatDateTime = (isoDate: string | null | undefined) => {
@@ -127,67 +218,72 @@ export default function ExportExcelButton({
     const order = orderItem?.orders;
 
     const id = item.id || '';
-    const projectName = item.project_name || 'ไม่มีการระบุโครงการ';
-    const areaSqm = Number(item.area_sqm) || 0;
-    const createdAt = item.created_at;
-    const isVip = Boolean(item.is_important);
-    const queueLevel = item.queue_level;
-    const projectYear = item.project_year;
-    const projectNote = item.project_note || '';
+    const projectName = item.projectName || item.project_name || 'ไม่มีการระบุโครงการ';
+    const areaSqm = Number(item.area ?? item.area_sqm) || 0;
+    const createdAt = item.createdAt || item.created_at;
+    const isVip = Boolean(item.isVip || item.is_important);
+    const queueLevel = item.queueLevel ?? item.queue_level;
+    const projectYear = item.projectYear ?? item.project_year;
+    const projectNote = item.projectNote || item.project_note || '';
 
-    const projectTypeId = item.project_type_id;
-    const projectTypeName = isNested
+    const projectTypeId = item.projectTypeId || item.project_type_id;
+    const projectTypeName = item.projectType || item.project_type_name || (isNested
       ? (item.project_types?.name || projectTypeMap[projectTypeId] || '-')
-      : (item.project_type_name || projectTypeMap[projectTypeId] || '-');
+      : (item.project_type_name || projectTypeMap[projectTypeId] || '-'));
 
-    const productCategoryId = isNested ? orderItem?.product_category_id : item.product_category_id;
-    const productCategoryName = isNested
+    const productCategoryId = isNested ? orderItem?.product_category_id : (item.productCategoryId || item.product_category_id);
+    const productCategoryName = item.categoryName || item.product_category_name || (isNested
       ? (orderItem?.product_categories?.name || productCategoryMap[productCategoryId] || '-')
-      : (item.product_category_name || productCategoryMap[productCategoryId] || '-');
+      : (item.product_category_name || productCategoryMap[productCategoryId] || '-'));
 
-    const salesNote = (isNested ? orderItem?.note : item.sales_note) || '';
-    const interestLevel = (isNested ? orderItem?.interest_level : item.interest_level) || '-';
+    const salesNote = item.salesNote || item.note || (isNested ? orderItem?.note : item.sales_note) || '';
+    const interestLevel = item.interestLevel || (isNested ? orderItem?.interest_level : item.interest_level) || '-';
 
-    const orderId = isNested ? order?.id : item.order_id;
-    const orderItemId = isNested ? orderItem?.id : item.order_item_id;
-    const customerName = (isNested ? order?.customer_name : item.customer_name) || '-';
-    const phone = (isNested ? order?.phone : item.phone) || '-';
-    const userId = isNested ? order?.user_id : item.user_id;
-    const teamId = isNested ? order?.team_id : item.team_id;
+    const orderId = item.orderId || (isNested ? order?.id : item.order_id);
+    const orderItemId = item.orderItemId || (isNested ? orderItem?.id : item.order_item_id);
+    const customerName = item.customerName || (isNested ? order?.customer_name : item.customer_name) || '-';
+    const rawPhone = item.phone || (isNested ? order?.phone : item.phone) || '';
+    const userId = isNested ? order?.user_id : (item.userId || item.user_id);
+    const teamId = isNested ? order?.team_id : (item.teamId || item.team_id);
     const isSynced = (isNested ? order?.is_synced : item.is_synced) ?? true;
-    const auditLog = isNested ? order?.audit_log : item.audit_log;
-    const source = isNested ? order?.source : item.source;
-    const customerTypeId = isNested ? order?.customer_type_id : item.customer_type_id;
-    const companyName = (isNested ? (order?.companies?.name || '') : (item.company_name || '')) || '-';
+    const auditLog = item.auditLog || (isNested ? order?.audit_log : item.audit_log);
+    const source = item.source || (isNested ? order?.source : item.source);
+    const customerTypeId = item.customerTypeId || (isNested ? order?.customer_type_id : item.customer_type_id);
+    const companyName = item.companyName || (isNested ? (order?.companies?.name || '') : (item.company_name || '')) || '-';
 
-    // ดึงเบอร์ติดต่อ Stakeholder จาก contactMap ถ้ามี
+    // ดึงเบอร์ติดต่อ Stakeholder จาก contactMap หรือ stakeholders ของ item
     const contacts = contactMap[id] || {};
-    const accDev = item.account_developer || '';
-    const conDev = contacts.contact_developer || '';
-    const accArch = item.account_architecture || '';
-    const conArch = contacts.contact_architecture || '';
-    const accInt = item.account_interior || '';
-    const conInt = contacts.contact_interior || '';
-    const accCont = item.account_contractor || '';
-    const conCont = contacts.contact_contractor || '';
+    const accDev = item.account_developer || item.stakeholders?.devAcc || '';
+    const conDev = item.contact_developer || contacts.contact_developer || item.stakeholders?.devCont || '';
+    const accArch = item.account_architecture || item.stakeholders?.archAcc || '';
+    const conArch = item.contact_architecture || contacts.contact_architecture || item.stakeholders?.archCont || '';
+    const accInt = item.account_interior || item.stakeholders?.intAcc || '';
+    const conInt = item.contact_interior || contacts.contact_interior || item.stakeholders?.intCont || '';
+    const accCont = item.account_contractor || item.stakeholders?.contAcc || '';
+    const conCont = item.contact_contractor || contacts.contact_contractor || item.stakeholders?.contCont || '';
 
-    const salesName = profileMap[userId] || (userId ? 'พนักงานที่ถูกลบ' : 'ไม่ระบุ');
-    const teamName = teamMap[teamId] || (teamId ? 'ทีมไม่ระบุ' : '-');
-    const customerTypeName = customerTypeMap[customerTypeId] || '-';
+    // สุ่ม/ดึงเบอร์ติดต่อจาก Stakeholder หากเบอร์ลูกค้าว่าง
+    const availableContacts = [conDev, conArch, conInt, conCont].filter(Boolean);
+    const fallbackPhone = availableContacts.length > 0 ? availableContacts[0] : '';
+    const phone = (rawPhone && rawPhone !== '-') ? rawPhone : fallbackPhone;
+
+    const salesName = item.sales_name || item.salesName || profileMap[userId] || (userId ? 'พนักงานที่ถูกลบ' : 'ไม่ระบุ');
+    const teamName = item.team_name || item.teamName || teamMap[teamId] || (teamId ? 'ทีมไม่ระบุ' : '-');
+    const customerTypeName = item.customerTypeName || customerTypeMap[customerTypeId] || '-';
 
     // วิเคราะห์ Audit Log (GPS, อุปกรณ์, เครือข่าย)
     const location = auditLog?.location;
-    const lat = location?.lat ?? location?.latitude;
-    const lng = location?.lng ?? location?.longitude;
+    const lat = item.lat ?? location?.lat ?? location?.latitude;
+    const lng = item.lng ?? location?.lng ?? location?.longitude;
     const accuracy = location?.accuracy;
     const mapsUrl = (lat && lng) ? `https://www.google.com/maps?q=${lat},${lng}` : '';
 
     const device = auditLog?.device;
-    const deviceStr = device 
+    const deviceStr = item.device || (device 
       ? `${device.brand || ''} ${device.model || ''} (${device.os || ''} ${device.version || ''})`.trim() 
-      : '-';
+      : '-');
     const networkIp = auditLog?.network?.ip || '-';
-    const sourceName = auditLog ? 'Mobile App (ลงพื้นที่)' : (source || 'File Import');
+    const sourceName = item.source_name || (auditLog ? 'Mobile App (ลงพื้นที่)' : (source || 'File Import'));
 
     const dt = formatDateTime(createdAt);
 
@@ -208,6 +304,7 @@ export default function ExportExcelButton({
       interestLevel,
       customerName,
       phone,
+      fallbackPhone,
       salesName,
       teamName,
       companyName,
@@ -343,6 +440,7 @@ export default function ExportExcelButton({
         pipeline = 'Fur-Project';
       }
     }
+    if (pipeline === '-' || pipeline === 'ทีมไม่ระบุ' || pipeline === 'ไม่มีทีม') return '';
     return pipeline;
   };
 
@@ -361,7 +459,7 @@ export default function ExportExcelButton({
         contactMap = result.contactMap;
       } else {
         setExportProgress('กำลังเตรียมข้อมูลตามตัวกรอง...');
-        rawProjects = currentFilteredProjects.length > 0 ? currentFilteredProjects : (ordersData || []);
+        rawProjects = filteredProjectsList;
         contactMap = await fetchContactsForCurrentProjects();
       }
 
@@ -436,25 +534,42 @@ export default function ExportExcelButton({
 
       } else if (format === 'ODOO_EXCEL') {
         setExportProgress('กำลังสร้างไฟล์ Excel รูปแบบ Odoo...');
-        const odooRows = normalizedList.map((p) => ({
-          'Project name': p.projectName,
-          'Contact': p.customerName === '-' ? '' : p.customerName,
-          'Phone': p.phone === '-' ? '' : p.phone,
-          'Pipeline': mapOdooPipeline(p.teamName, p.productCategoryName),
-          'Project Type': mapOdooProjectType(p.projectTypeName, p.areaSqm),
-          'Closing Potential': p.interestLevel === '-' ? '' : p.interestLevel,
-          'Salesperson': p.salesName === 'ไม่ระบุ' ? '' : p.salesName,
-          'Product Group': p.productCategoryName === '-' ? '' : p.productCategoryName,
-          'Source': p.sourceName,
-          'Architecture': p.architectFormatted === '-' ? '' : p.architectFormatted,
-          'Contractor': p.contractorFormatted === '-' ? '' : p.contractorFormatted,
-          'Landscape': '',
-          'Interior': p.interiorFormatted === '-' ? '' : p.interiorFormatted,
-          'Developer': p.developerFormatted === '-' ? '' : p.developerFormatted,
-          'Unit / Project': p.areaSqm,
-          'Note :': p.salesNote || '',
-          'Admin Note': p.projectNote || ''
-        }));
+        const odooRows = normalizedList.map((p) => {
+          // หากไม่มีชื่อโปรเจกต์ ให้ใช้ชื่อบริษัท หรือชื่อลูกค้า เพื่อให้ Odoo CRM มีหัวข้อชัดเจน ไม่กลายเป็นบั๊กไม่มีชื่อ
+          let pName = p.projectName;
+          if (!pName || pName === 'ไม่มีการระบุโครงการ' || pName === 'ไม่ระบุชื่อโปรเจกต์' || pName === '-') {
+            if (p.companyName && p.companyName !== '-') {
+              pName = `[พบลูกค้า] ${p.companyName}`;
+            } else if (p.customerName && p.customerName !== '-') {
+              pName = `[พบลูกค้า] ${p.customerName}`;
+            } else {
+              pName = 'ไม่มีการระบุโครงการ';
+            }
+          }
+
+          // สุ่ม/ดึงเบอร์ติดต่อที่มีอยู่ (หากเบอร์ลูกค้าว่าง หรือเป็นขีด)
+          const validPhone = (p.phone && p.phone !== '-') ? p.phone : (p.fallbackPhone || '');
+
+          return {
+            'Project name': pName,
+            'Contact': p.customerName === '-' ? '' : p.customerName,
+            'Phone': validPhone,
+            'Pipeline': mapOdooPipeline(p.teamName, p.productCategoryName),
+            'Project Type': mapOdooProjectType(p.projectTypeName, p.areaSqm),
+            'Closing Potential': p.interestLevel === '-' ? '' : p.interestLevel,
+            'Salesperson': (p.salesName === 'ไม่ระบุ' || p.salesName === 'พนักงานที่ถูกลบ') ? '' : p.salesName,
+            'Product Group': p.productCategoryName === '-' ? '' : p.productCategoryName,
+            'Source': p.sourceName,
+            'Architecture': p.architectFormatted === '-' ? '' : p.architectFormatted,
+            'Contractor': p.contractorFormatted === '-' ? '' : p.contractorFormatted,
+            'Landscape': '',
+            'Interior': p.interiorFormatted === '-' ? '' : p.interiorFormatted,
+            'Developer': p.developerFormatted === '-' ? '' : p.developerFormatted,
+            'Unit / Project': p.areaSqm || 0,
+            'Note :': p.salesNote || '',
+            'Admin Note': p.projectNote || ''
+          };
+        });
 
         const worksheet = XLSX.utils.json_to_sheet(odooRows);
         const workbook = XLSX.utils.book_new();
@@ -645,7 +760,7 @@ export default function ExportExcelButton({
                         </span>
                       </div>
                       <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                        {currentFilteredProjects.length} รายการ
+                        {filteredCount} รายการ
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
