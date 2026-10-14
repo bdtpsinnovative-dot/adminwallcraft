@@ -18,7 +18,10 @@ import {
   Loader2,
   ArrowRight,
   RefreshCw,
-  FileText
+  FileText,
+  File as FileIcon,
+  ExternalLink,
+  Edit3
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -221,14 +224,69 @@ function toDatabaseRecord(record: PiRecord, includeAmounts = false): DatabasePiR
   return dbRecord;
 }
 
-function getLinkDetails(value: string, helperUrl?: string) {
+const safeUrl = (value?: string) => /^https?:\/\//i.test(value?.trim() || '');
+
+function getDocumentBadge(value: string, helperUrl?: string, isFile = false) {
   const text = (value || '').trim();
-  if (helperUrl && /^https?:\/\//i.test(helperUrl.trim())) return { href: helperUrl.trim(), label: text || 'เปิดไฟล์' };
-  const formulaMatch = text.match(/^=HYPERLINK\(\s*"([^"]+)"(?:\s*,\s*"([^"]*)")?\s*\)$/i);
-  if (formulaMatch) return { href: formulaMatch[1], label: formulaMatch[2] || 'เปิดไฟล์' };
-  if (/^https?:\/\//i.test(text)) return { href: text, label: text };
-  return null;
+  let href = '';
+  let label = text;
+
+  if (helperUrl && safeUrl(helperUrl)) {
+    href = helperUrl.trim();
+  } else {
+    const formulaMatch = text.match(/^=HYPERLINK\(\s*"([^"]+)"(?:\s*,\s*"([^"]*)")?\s*\)$/i);
+    if (formulaMatch) {
+      href = formulaMatch[1];
+      label = formulaMatch[2] || text;
+    } else if (safeUrl(text)) {
+      href = text;
+    }
+  }
+
+  if (!href) return null;
+
+  const source = `${label} ${href}`.toLowerCase();
+  if (/\.pdf(?:[?#]|$)|\/pdf\b/.test(source)) {
+    return {
+      href,
+      label: safeUrl(label) ? 'PDF' : label,
+      Icon: FileText,
+      className: 'bg-rose-50 text-rose-700 border border-rose-200/80 hover:bg-rose-100',
+    };
+  }
+  if (/docs\.google\.com\/spreadsheets|\.xlsx?(?:[?#]|$)|\.csv(?:[?#]|$)/.test(source)) {
+    return {
+      href,
+      label: safeUrl(label) ? 'Google Sheet' : label,
+      Icon: FileSpreadsheet,
+      className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100',
+    };
+  }
+  return {
+    href,
+    label: safeUrl(label) ? (isFile ? 'เปิดไฟล์' : 'เปิดเอกสาร') : label,
+    Icon: FileIcon,
+    className: 'bg-sky-50 text-sky-700 border border-sky-200/80 hover:bg-sky-100',
+  };
 }
+
+const initialManualForm: Record<ColumnKey, string> = {
+  piSupplier: '',
+  date: '',
+  supplier: '',
+  linkFile: '',
+  amountYuan: '',
+  amountDollar: '',
+  etd: '',
+  brand: '',
+  orderNo: '',
+  file: '',
+  saleName: '',
+  projectName: '',
+  paymentDate: '',
+  deliveredDate: '',
+  dateOrder: '',
+};
 
 export default function PiRecordPage() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -238,6 +296,8 @@ export default function PiRecordPage() {
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'manual' | 'upload'>('manual');
+  const [manualForm, setManualForm] = useState<Record<ColumnKey, string>>(initialManualForm);
   const [filters, setFilters] = useState<Record<ColumnKey, string>>(() => emptyFilters());
   const [message, setMessage] = useState('');
 
@@ -334,6 +394,31 @@ export default function PiRecordPage() {
       console.error('Unable to save PI records to Supabase:', error);
       setMessage('บันทึกลงฐานข้อมูลไม่สำเร็จ ข้อมูลถูกเก็บไว้ในเครื่องนี้ชั่วคราว');
     }
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualForm.piSupplier.trim() && !manualForm.orderNo.trim() && !manualForm.supplier.trim()) {
+      setMessage('กรุณากรอกข้อมูลอย่างน้อย เช่น PI-Supplier, Supplier หรือ Order No.');
+      return;
+    }
+    const newRecord: PiRecord = {
+      id: crypto.randomUUID(),
+      ...manualForm,
+      linkFileUrl: safeUrl(manualForm.linkFile) ? manualForm.linkFile.trim() : '',
+      fileUrl: safeUrl(manualForm.file) ? manualForm.file.trim() : '',
+    };
+    await saveRecords([newRecord, ...records]);
+    setManualForm(initialManualForm);
+    setIsImportModalOpen(false);
+    setMessage('บันทึกข้อมูลรายการใหม่เรียบร้อยแล้ว');
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) return;
+    const nextRecords = records.filter((r) => r.id !== id);
+    await saveRecords(nextRecords);
+    setMessage('ลบรายการเรียบร้อยแล้ว');
   };
 
   // Download Templates
@@ -607,16 +692,30 @@ export default function PiRecordPage() {
             )}
           </div>
 
-          {/* Add / Import Button */}
+          {/* Add Manual Record Button */}
           <button
             type="button"
             onClick={() => {
               setPreviewData(null);
+              setModalTab('manual');
               setIsImportModalOpen(true);
             }}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-100 transition hover:bg-blue-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-100 transition hover:bg-blue-700 cursor-pointer"
           >
-            <Plus size={17} /> เพิ่มข้อมูล / อัปโหลด
+            <Plus size={17} /> เพิ่มข้อมูลใหม่
+          </button>
+
+          {/* Import Excel Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setPreviewData(null);
+              setModalTab('upload');
+              setIsImportModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 cursor-pointer"
+          >
+            <Upload size={16} /> นำเข้า Excel/CSV
           </button>
 
           {/* Clear Button */}
@@ -624,7 +723,7 @@ export default function PiRecordPage() {
             type="button"
             onClick={clearRecords}
             disabled={records.length === 0}
-            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-3.5 py-2.5 text-sm font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-3.5 py-2.5 text-sm font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
           >
             <Trash2 size={16} /> ล้างข้อมูล
           </button>
@@ -709,13 +808,16 @@ export default function PiRecordPage() {
                   {columns.map((col) => (
                     <th
                       key={col.key}
-                      className={`whitespace-nowrap border-r border-slate-200 px-3 py-3 font-bold last:border-r-0 ${
+                      className={`whitespace-nowrap border-r border-slate-200 px-3 py-3 font-bold ${
                         (col as any).align === 'right' ? 'text-right' : 'text-left'
                       }`}
                     >
                       {col.label}
                     </th>
                   ))}
+                  <th className="whitespace-nowrap px-3 py-3 font-bold text-center w-16">
+                    จัดการ
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -723,29 +825,31 @@ export default function PiRecordPage() {
                   <tr key={record.id} className="transition hover:bg-blue-50/40">
                     {columns.map((col) => {
                       const key = col.key;
-                      const link =
+                      const badge =
                         key === 'linkFile'
-                          ? getLinkDetails(record[key], record.linkFileUrl)
+                          ? getDocumentBadge(record[key], record.linkFileUrl, false)
                           : key === 'file'
-                          ? getLinkDetails(record[key], record.fileUrl)
+                          ? getDocumentBadge(record[key], record.fileUrl, true)
                           : null;
                       const isRight = (col as any).align === 'right';
                       return (
                         <td
                           key={key}
-                          className={`max-w-64 border-r border-slate-100 px-3 py-3 align-top text-slate-600 last:border-r-0 ${
-                            isRight ? 'text-right font-medium text-slate-800' : ''
+                          className={`max-w-64 border-r border-slate-100 px-3 py-3 align-middle text-slate-600 ${
+                            isRight ? 'text-right font-bold text-slate-900 whitespace-nowrap' : ''
                           }`}
                         >
-                          {link ? (
+                          {badge ? (
                             <a
-                              href={link.href}
+                              href={badge.href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block truncate font-semibold text-blue-600 underline decoration-blue-200 underline-offset-2 transition hover:text-blue-800 hover:decoration-blue-600"
-                              title={link.href}
+                              className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition hover:brightness-95 shadow-2xs ${badge.className}`}
+                              title={badge.href}
                             >
-                              {link.label}
+                              <badge.Icon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{badge.label}</span>
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                             </a>
                           ) : (
                             record[key] || '-'
@@ -753,6 +857,16 @@ export default function PiRecordPage() {
                         </td>
                       );
                     })}
+                    <td className="px-3 py-3 align-middle text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRecord(record.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                        title="ลบรายการนี้"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -782,7 +896,7 @@ export default function PiRecordPage() {
           }}
         >
           <div
-            className={`w-full ${previewData ? 'max-w-6xl max-h-[92vh]' : 'max-w-3xl'} bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 border border-slate-100`}
+            className={`w-full ${previewData ? 'max-w-6xl max-h-[92vh]' : modalTab === 'manual' ? 'max-w-4xl max-h-[92vh]' : 'max-w-3xl'} bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 border border-slate-100`}
             onMouseDown={(e) => {
               isMouseDownOnBackdrop.current = false;
               e.stopPropagation();
@@ -790,44 +904,148 @@ export default function PiRecordPage() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
+            <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold shadow-sm">
-                  {previewData ? <Eye size={20} /> : <Upload size={20} />}
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold shadow-sm shrink-0">
+                  {previewData ? <Eye size={20} /> : modalTab === 'manual' ? <Plus size={20} /> : <Upload size={20} />}
                 </div>
                 <div>
                   <h2 id="import-modal-title" className="text-lg font-black text-slate-800">
-                    {previewData ? 'ตัวอย่างข้อมูลก่อนนำเข้า (Preview)' : 'นำเข้าข้อมูล PI Record'}
+                    {previewData
+                      ? 'ตัวอย่างข้อมูลก่อนนำเข้า (Preview)'
+                      : modalTab === 'manual'
+                      ? 'เพิ่มรายการ PI Record ใหม่'
+                      : 'นำเข้าข้อมูล PI Record จากไฟล์'}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {previewData
                       ? `ตรวจสอบความถูกต้องของข้อมูลจากไฟล์ ${previewData.fileName}`
+                      : modalTab === 'manual'
+                      ? 'กรอกข้อมูล 15 ช่องเรียงลำดับเดียวกับตารางหน้าแสดงผล'
                       : 'รองรับไฟล์ Excel (.xlsx, .xls) และ CSV (.csv)'}
                   </p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isSaving) {
-                    setIsImportModalOpen(false);
-                    setPreviewData(null);
-                  }
-                }}
-                disabled={isSaving}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition cursor-pointer"
-                aria-label="ปิดหน้าต่าง"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {!previewData && (
+                  <div className="flex bg-slate-200/80 p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('manual')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        modalTab === 'manual'
+                          ? 'bg-white text-blue-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Plus size={14} /> กรอกข้อมูล (15 ช่อง)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('upload')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        modalTab === 'upload'
+                          ? 'bg-white text-blue-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Upload size={14} /> อัปโหลด Excel/CSV
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isSaving) {
+                      setIsImportModalOpen(false);
+                      setPreviewData(null);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition cursor-pointer"
+                  aria-label="ปิดหน้าต่าง"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto min-h-0 flex-1">
               {!previewData ? (
-                /* ── STEP 1: UPLOAD ZONE ── */
-                <div className="space-y-6">
+                modalTab === 'manual' ? (
+                  /* ── TAB 1: MANUAL ADD FORM (15 FIELDS) ── */
+                  <form onSubmit={handleManualSubmit} className="space-y-4">
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5">
+                      <p className="text-xs font-semibold text-blue-800">
+                        กรอกข้อมูลเรียงตามลำดับคอลัมน์ 1-15 (แนวเดียวกับตารางหน้าแสดงผลและแบบฟอร์ม Excel รูปที่ 2)
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {columns.map((col, idx) => {
+                        const isAmount = col.key === 'amountYuan' || col.key === 'amountDollar';
+                        return (
+                          <div key={col.key} className="space-y-1">
+                            <label className="flex items-center justify-between text-xs font-bold text-slate-700">
+                              <span>
+                                <span className="text-blue-600 mr-1 font-extrabold">#{idx + 1}</span>
+                                {col.label}
+                              </span>
+                              {isAmount && (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
+                                  ยอดเงิน
+                                </span>
+                              )}
+                            </label>
+                            <input
+                              type="text"
+                              value={manualForm[col.key]}
+                              onChange={(e) =>
+                                setManualForm((prev) => ({ ...prev, [col.key]: e.target.value }))
+                              }
+                              placeholder={`ระบุ ${col.label}...`}
+                              className={`w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 ${
+                                isAmount ? 'text-right font-semibold' : ''
+                              }`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setManualForm(initialManualForm)}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 transition cursor-pointer"
+                      >
+                        ล้างช่องกรอก
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsImportModalOpen(false)}
+                          className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSaving}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white shadow-md shadow-blue-200 transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isSaving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                          บันทึกรายการนี้
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  /* ── TAB 2: UPLOAD ZONE ── */
+                  <div className="space-y-6">
                   {/* Template Download Prompt */}
                   <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-start gap-3">
@@ -923,6 +1141,7 @@ export default function PiRecordPage() {
                     </div>
                   </div>
                 </div>
+              )
               ) : (
                 /* ── STEP 2: PREVIEW MODE ── */
                 <div className="space-y-5">
