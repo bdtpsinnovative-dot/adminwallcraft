@@ -16,6 +16,7 @@ import CompanyCandlestickChart from '@/components/CompanyCandlestickChart';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import WeeklyVisitPlanner from '@/components/WeeklyVisitPlanner';
 import ExportExcelButton from '@/components/ExportExcelButton';
+import { normalizeCompanyName, chooseBestCompanyName, buildMappingLookup, resolveCompany } from '@/lib/company-utils';
 
 interface Props {
   currentUserRole: string;
@@ -26,6 +27,7 @@ interface Props {
   teams: any[];
   customerTypes: any[];
   variant?: 'standard' | 'advance';
+  companyMappings?: any[];
 }
 
 interface CacheData {
@@ -124,7 +126,8 @@ export default function DashboardClientContainer({
   productCategories,
   teams,
   customerTypes,
-  variant = 'standard'
+  variant = 'standard',
+  companyMappings = []
 }: Props) {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -346,10 +349,15 @@ export default function DashboardClientContainer({
     });
   }, [filteredWithoutArea, minArea, maxArea]);
 
-  // 5. Build rest of dashboard stats based on allActiveProjects
+  // 5. Build rest of dashboard stats based on allActiveProjects with smart company mapping
+  const mappingLookup = useMemo(() => {
+    return buildMappingLookup(companyMappings);
+  }, [companyMappings]);
+
   const companyStats = useMemo(() => {
     const stats: Record<string, {
       id: string;
+      allIds: string[];
       name: string;
       count: number;
       salesBreakdown: Record<string, number>;
@@ -376,25 +384,47 @@ export default function DashboardClientContainer({
       const salesName = profileMap[userId] || (userId === 'unknown' ? 'ไม่ระบุ/ไม่มีเซลส์' : 'พนักงานที่ถูกลบ');
 
       if (company && company.name && company.id) {
-        const cName = company.name;
-        if (!stats[cName]) stats[cName] = { id: company.id, name: cName, count: 0, salesBreakdown: {}, uniqueProjects: new Map(), totalSqm: 0 };
+        // Resolve company: matches custom configured mapping or default smart normalization
+        const resolved = resolveCompany({ id: company.id, name: company.name }, mappingLookup);
+        const groupKey = resolved.groupKey;
+        if (!groupKey) return;
+
+        if (!stats[groupKey]) {
+          stats[groupKey] = {
+            id: resolved.primaryId,
+            allIds: [...resolved.allIds],
+            name: resolved.targetName,
+            count: 0,
+            salesBreakdown: {},
+            uniqueProjects: new Map(),
+            totalSqm: 0
+          };
+        } else {
+          // If this group was not explicitly mapped by a custom rule, prefer best formatted name
+          if (!mappingLookup.has(`id:${company.id}`)) {
+            stats[groupKey].name = chooseBestCompanyName(stats[groupKey].name, resolved.targetName);
+          }
+          if (!stats[groupKey].allIds.includes(company.id)) {
+            stats[groupKey].allIds.push(company.id);
+          }
+        }
         
-        stats[cName].count += 1; 
-        stats[cName].totalSqm += (Number(proj.area_sqm) || 0);
+        stats[groupKey].count += 1; 
+        stats[groupKey].totalSqm += (Number(proj.area_sqm) || 0);
         
         const projName = proj.project_name?.trim() || '';
         if (projName && projName !== 'ไม่มีการระบุโครงการ' && projName !== 'ไม่ระบุโครงการ') {
           const rawCapturedAt = order?.audit_log?.location?.captured_at;
           const pDate = new Date(rawCapturedAt || proj.created_at || order?.created_at || new Date());
           
-          let existingProject = stats[cName].uniqueProjects.get(projName);
+          let existingProject = stats[groupKey].uniqueProjects.get(projName);
           if (!existingProject) {
             existingProject = {
               firstDate: pDate,
               latestDate: pDate,
               salesMap: new Map(),
             };
-            stats[cName].uniqueProjects.set(projName, existingProject);
+            stats[groupKey].uniqueProjects.set(projName, existingProject);
           }
           
           if (pDate < existingProject.firstDate) existingProject.firstDate = pDate;
@@ -415,12 +445,12 @@ export default function DashboardClientContainer({
           }
         }
 
-        if (!stats[cName].salesBreakdown[salesName]) stats[cName].salesBreakdown[salesName] = 0;
-        stats[cName].salesBreakdown[salesName] += 1;
+        if (!stats[groupKey].salesBreakdown[salesName]) stats[groupKey].salesBreakdown[salesName] = 0;
+        stats[groupKey].salesBreakdown[salesName] += 1;
       }
     });
     return stats;
-  }, [allActiveProjects, profileMap]);
+  }, [allActiveProjects, profileMap, mappingLookup]);
 
   const repeatedVisitsData = useMemo(() => {
     const searchLower = repeatedSearch.toLowerCase().trim();
@@ -966,9 +996,14 @@ export default function DashboardClientContainer({
                           {index + 1}
                         </td>
                         <td className="px-5 py-3 align-middle">
-                          <span className="font-semibold text-slate-800 text-[13px] block">
+                          <Link
+                            href={`/dashboard/companies/${comp.id}`}
+                            target="_blank"
+                            className="font-semibold text-slate-800 text-[13px] hover:text-indigo-600 hover:underline block transition-colors"
+                            title="คลิกเพื่อดูประวัติการเข้าพบของบริษัทนี้"
+                          >
                             {comp.name}
-                          </span>
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-center align-middle">
                           <span className="inline-flex items-center justify-center min-w-[32px] px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 font-bold text-xs">

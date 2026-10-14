@@ -1,5 +1,6 @@
 // src/app/dashboard/page.tsx
 import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import DashboardClientContainer from '@/components/DashboardClientContainer';
@@ -31,18 +32,31 @@ export default async function DashboardPage({
       { data: projectTypes },
       { data: productCategories },
       { data: teams },
-      { data: customerTypes }
+      { data: customerTypes },
+      mappingsResult
     ] = await Promise.all([
       supabase.auth.getUser(token),
       supabase.from('profiles').select('id, full_name, team_id, role'),
       supabase.from('project_types').select('id, name'),
       supabase.from('product_categories').select('id, name'),
       supabase.from('teams').select('id, team_name').order('team_name'),
-      supabase.from('customer_types').select('id, name')
+      supabase.from('customer_types').select('id, name'),
+      supabaseAdmin.storage.from('orders').download('configs/company-mappings.json').catch(() => ({ data: null }))
     ]);
 
     if (authResult.error || !authResult.data?.user) {
       redirect('/login');
+    }
+
+    let companyMappings = [];
+    if (mappingsResult?.data) {
+      try {
+        const text = await mappingsResult.data.text();
+        const json = JSON.parse(text);
+        if (Array.isArray(json?.groups)) companyMappings = json.groups;
+      } catch (e) {
+        // ignore JSON parse error
+      }
     }
 
     const user = authResult.data.user;
@@ -59,6 +73,7 @@ export default async function DashboardPage({
         productCategories={productCategories || []}
         teams={teams || []}
         customerTypes={customerTypes || []}
+        companyMappings={companyMappings}
       />
     );
   } catch (error: any) {

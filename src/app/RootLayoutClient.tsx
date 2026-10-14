@@ -109,6 +109,7 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
         { name: 'หน้าแรก (Dashboard)', path: '/dashboard', icon: LayoutDashboard, color: 'blue', adminOnly: false }, // ให้ user เข้าได้
         { name: 'Dashboard Advance', path: '/dashboardadvance', icon: LayoutDashboard, color: 'blue', adminOnly: false },
         { name: 'จัดการบริษัทคู่ค้า', path: '/companies', icon: Building2, color: 'blue', adminOnly: true },
+        { name: 'แมพชื่อบริษัท', path: '/company-mappings', icon: Sparkles, color: 'blue', adminOnly: true },
       ]
     },
     {

@@ -6,7 +6,7 @@ import {
   Building2, Tags, Plus, Save, Trash2, 
   ArrowLeft, CheckCircle2, Loader2, Search, Filter, 
   AlertCircle, X, CheckSquare, Square, FileUp, UploadCloud, Download,
-  Edit2, BarChart2
+  Edit2, BarChart2, Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import Papa from 'papaparse'; 
@@ -306,6 +306,15 @@ export default function ManageCompaniesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* ✨ ปุ่มแมพชื่อบริษัท (Company Mappings) */}
+          <Link 
+            href="/company-mappings" 
+            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-2xl font-bold flex items-center gap-2 border border-indigo-200 transition-all active:scale-95 text-sm shadow-sm"
+          >
+            <Sparkles size={18} />
+            แมพชื่อบริษัท
+          </Link>
+
           {/* ✅ ปุ่มรายงานวิเคราะห์ (สี Amber) */}
           <Link 
             href="/project-reports" 

@@ -8,6 +8,7 @@ import ExpandableNote from '@/components/ExpandableNote';
 import EditCheckInModal from '@/components/EditCheckInModal';
 import ExportExcelButton from '@/components/ExportExcelButton'; // ✨ นำเข้าปุ่มดาวน์โหลด
 import { cookies } from 'next/headers'; 
+import { normalizeCompanyName, chooseBestCompanyName, getCoreCompanyKeyword, MappingGroup } from '@/lib/company-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,11 +47,58 @@ export default async function CompanyCheckInHistoryPage({
 
   const { data: companyData } = await supabase
     .from('companies')
-    .select('name')
+    .select('id, name')
     .eq('id', companyId)
     .single();
     
-  const companyName = companyData?.name || 'ไม่พบข้อมูลบริษัท';
+  let companyName = companyData?.name || 'ไม่พบข้อมูลบริษัท';
+  let targetCompanyIds: string[] = [companyId];
+
+  if (companyData?.name) {
+    // 1. Check custom saved mapping config first
+    let mappedGroup: MappingGroup | null = null;
+    try {
+      const { data: file } = await supabase.storage.from('orders').download('configs/company-mappings.json');
+      if (file) {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        if (Array.isArray(json?.groups)) {
+          mappedGroup = json.groups.find((g: MappingGroup) => 
+            g.companyIds.includes(companyId) ||
+            normalizeCompanyName(g.targetName) === normalizeCompanyName(companyData.name) ||
+            (g.aliasNames || []).some(a => normalizeCompanyName(a) === normalizeCompanyName(companyData.name))
+          ) || null;
+        }
+      }
+    } catch (e) {
+      // storage file might not exist yet
+    }
+
+    if (mappedGroup) {
+      targetCompanyIds = Array.from(new Set([companyId, ...mappedGroup.companyIds]));
+      companyName = mappedGroup.targetName;
+    } else {
+      // 2. Auto-match by normalized name with sister companies
+      const normName = normalizeCompanyName(companyData.name);
+      const coreWord = getCoreCompanyKeyword(normName);
+      if (coreWord) {
+        const { data: sisterCompanies } = await supabase
+          .from('companies')
+          .select('id, name')
+          .ilike('name', `%${coreWord}%`);
+
+        if (sisterCompanies && sisterCompanies.length > 0) {
+          const matched = sisterCompanies.filter(c => normalizeCompanyName(c.name) === normName);
+          if (matched.length > 0) {
+            targetCompanyIds = Array.from(new Set([companyId, ...matched.map(c => c.id)]));
+            matched.forEach(c => {
+              companyName = chooseBestCompanyName(companyName, c.name);
+            });
+          }
+        }
+      }
+    }
+  }
 
   let startIso = '';
   let endIso = '';
@@ -87,7 +135,7 @@ export default async function CompanyCheckInHistoryPage({
         )
       )
     `)
-    .eq('company_id', companyId) 
+    .in('company_id', targetCompanyIds) 
     .not('audit_log', 'is', null) 
     .order('created_at', { ascending: false });
 
