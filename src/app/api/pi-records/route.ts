@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
   const { data, error } = await supabase
     .from('pi_records')
-    .select('id, pi_supplier, record_date, supplier, link_file, link_file_url, etd, brand, order_no, file_name, file_url, sale_name, project_name, payment_date, delivered_date, date_order')
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (error) {

@@ -27,6 +27,8 @@ const columns = [
   { key: 'date', label: 'Date' },
   { key: 'supplier', label: 'Supplier' },
   { key: 'linkFile', label: 'Link/File' },
+  { key: 'amountYuan', label: 'จำนวนเงิน (Yuan)', align: 'right' },
+  { key: 'amountDollar', label: 'จำนวนเงิน ($)', align: 'right' },
   { key: 'etd', label: 'ETD' },
   { key: 'brand', label: 'Band' },
   { key: 'orderNo', label: 'Order_NO.' },
@@ -48,6 +50,8 @@ type DatabasePiRecord = {
   supplier: string;
   link_file: string;
   link_file_url: string;
+  amount_yuan?: string;
+  amount_dollar?: string;
   etd: string;
   brand: string;
   order_no: string;
@@ -75,6 +79,39 @@ const headerAliases: Record<ColumnKey, string[]> = {
   date: ['date', 'record_date', 'record date', 'วันที่'],
   supplier: ['supplier', 'ผู้จัดจำหน่าย', 'ซัพพลายเออร์'],
   linkFile: ['link/file', 'link file', 'linkfile', 'link_file', 'link', 'ลิงก์ไฟล์', 'ลิงค์'],
+  amountYuan: [
+    'จำนวนเงิน (yuan)',
+    'จำนวนเงิน(yuan)',
+    'จำนวนเงิน yuan',
+    'จำนวนเงิน (หยวน)',
+    'จำนวนเงิน(หยวน)',
+    'จำนวนเงินหยวน',
+    'amount (yuan)',
+    'amount(yuan)',
+    'amount yuan',
+    'amount_yuan',
+    'yuan',
+    'cny',
+    'rmb',
+  ],
+  amountDollar: [
+    'จำนวนเงิน ($)',
+    'จำนวนเงิน($)',
+    'จำนวนเงิน $',
+    'จำนวนเงิน (dollar)',
+    'จำนวนเงิน (ดอลลาร์)',
+    'จำนวนเงินดอลลาร์',
+    'amount ($)',
+    'amount($)',
+    'amount $',
+    'amount (dollar)',
+    'amount dollar',
+    'amount_dollar',
+    'amount_usd',
+    'usd',
+    'dollar',
+    '$',
+  ],
   etd: ['etd', 'กำหนดส่ง', 'estimated delivery'],
   brand: ['band', 'brand', 'แบรนด์'],
   orderNo: ['order_no.', 'order_no', 'order no', 'orderno', 'order number', 'เลขออเดอร์', 'เลขที่สั่งซื้อ'],
@@ -88,35 +125,39 @@ const headerAliases: Record<ColumnKey, string[]> = {
 
 const sampleTemplateRows = [
   {
-    'PI-Supplier': 'PI-2026-001',
-    'Date': '2026-10-01',
-    'Supplier': 'Siam Wood Co., Ltd.',
+    'PI-Supplier': 'BD-2026-01-12',
+    'Date': '12/01/2026',
+    'Supplier': 'SHENGZHOUSHI MINBANG NEW MATERIAL (MCM)',
     'Link/File': 'https://drive.google.com/sample-file-1.pdf',
-    'ETD': '2026-10-25',
-    'Band': 'WallCraft Elite',
+    'จำนวนเงิน (Yuan)': '150,000.00',
+    'จำนวนเงิน ($)': '21,500.00',
+    'ETD': 'ของถึง Warehouse แล้ว',
+    'Band': 'WallCraft-Craft Stone',
     'Order_NO.': 'ORD-9842',
     'File': 'PI_Doc_001.pdf',
     'Sale_Name': 'สมชาย ใจดี',
     'Project_name': 'Villa Phuket Residence',
     'Payment_Date': '2026-10-05',
     'Delivered_Date': '2026-10-28',
-    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-02'
+    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-02',
   },
   {
-    'PI-Supplier': 'PI-2026-002',
-    'Date': '2026-10-03',
-    'Supplier': 'Timber Master Import',
+    'PI-Supplier': 'MLH20260109RAQ',
+    'Date': '01/09/2026',
+    'Supplier': 'Gooday (WPC)',
     'Link/File': 'https://drive.google.com/sample-file-2.pdf',
-    'ETD': '2026-11-02',
-    'Band': 'Terra Teak',
+    'จำนวนเงิน (Yuan)': '85,000.00',
+    'จำนวนเงิน ($)': '12,200.00',
+    'ETD': 'ของถึง Warehouse แล้ว',
+    'Band': 'WallCraft-Essential',
     'Order_NO.': 'ORD-9843',
     'File': 'PI_Doc_002.pdf',
     'Sale_Name': 'วิภาดา รวยรื่น',
     'Project_name': 'The Riverfront Condo',
     'Payment_Date': '2026-10-08',
     'Delivered_Date': '2026-11-05',
-    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-04'
-  }
+    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-04',
+  },
 ];
 
 function normaliseHeader(value: string) {
@@ -134,26 +175,28 @@ function emptyFilters(): Record<ColumnKey, string> {
 function fromDatabaseRecord(record: DatabasePiRecord): PiRecord {
   return {
     id: record.id,
-    piSupplier: record.pi_supplier,
-    date: record.record_date,
-    supplier: record.supplier,
-    linkFile: record.link_file,
-    linkFileUrl: record.link_file_url,
-    etd: record.etd,
-    brand: record.brand,
-    orderNo: record.order_no,
-    file: record.file_name,
-    fileUrl: record.file_url,
-    saleName: record.sale_name,
-    projectName: record.project_name,
-    paymentDate: record.payment_date,
-    deliveredDate: record.delivered_date,
-    dateOrder: record.date_order,
+    piSupplier: record.pi_supplier || '',
+    date: record.record_date || '',
+    supplier: record.supplier || '',
+    linkFile: record.link_file || '',
+    linkFileUrl: record.link_file_url || '',
+    amountYuan: record.amount_yuan || '',
+    amountDollar: record.amount_dollar || '',
+    etd: record.etd || '',
+    brand: record.brand || '',
+    orderNo: record.order_no || '',
+    file: record.file_name || '',
+    fileUrl: record.file_url || '',
+    saleName: record.sale_name || '',
+    projectName: record.project_name || '',
+    paymentDate: record.payment_date || '',
+    deliveredDate: record.delivered_date || '',
+    dateOrder: record.date_order || '',
   };
 }
 
-function toDatabaseRecord(record: PiRecord): DatabasePiRecord {
-  return {
+function toDatabaseRecord(record: PiRecord, includeAmounts = false): DatabasePiRecord {
+  const dbRecord: any = {
     id: record.id,
     pi_supplier: record.piSupplier,
     record_date: record.date,
@@ -171,6 +214,11 @@ function toDatabaseRecord(record: PiRecord): DatabasePiRecord {
     delivered_date: record.deliveredDate,
     date_order: record.dateOrder,
   };
+  if (includeAmounts) {
+    dbRecord.amount_yuan = record.amountYuan || '';
+    dbRecord.amount_dollar = record.amountDollar || '';
+  }
+  return dbRecord;
 }
 
 function getLinkDetails(value: string, helperUrl?: string) {
@@ -245,7 +293,13 @@ export default function PiRecordPage() {
       }
 
       // Migrate records previously stored only in this browser on the first load.
-      const { error: migrateError } = await supabase.from('pi_records').upsert(savedRecords.map(toDatabaseRecord), { onConflict: 'id' });
+      const migratePayload = savedRecords.map((r) => toDatabaseRecord(r, true));
+      let { error: migrateError } = await supabase.from('pi_records').upsert(migratePayload, { onConflict: 'id' });
+      if (migrateError && (migrateError.message?.includes('amount_yuan') || migrateError.message?.includes('schema cache'))) {
+        const fallbackMigrate = savedRecords.map((r) => toDatabaseRecord(r, false));
+        const res = await supabase.from('pi_records').upsert(fallbackMigrate, { onConflict: 'id' });
+        migrateError = res.error;
+      }
       if (migrateError) {
         setRecords(savedRecords);
         setMessage('ย้ายข้อมูลเดิมไปฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -269,7 +323,13 @@ export default function PiRecordPage() {
       console.error('Unable to save PI records:', error);
       setMessage('บันทึกข้อมูลในเบราว์เซอร์ไม่สำเร็จ');
     }
-    const { error } = await supabase.from('pi_records').upsert(nextRecords.map(toDatabaseRecord), { onConflict: 'id' });
+    const payloadWithAmounts = nextRecords.map((r) => toDatabaseRecord(r, true));
+    let { error } = await supabase.from('pi_records').upsert(payloadWithAmounts, { onConflict: 'id' });
+    if (error && (error.message?.includes('amount_yuan') || error.message?.includes('schema cache'))) {
+      const fallbackPayload = nextRecords.map((r) => toDatabaseRecord(r, false));
+      const res = await supabase.from('pi_records').upsert(fallbackPayload, { onConflict: 'id' });
+      error = res.error;
+    }
     if (error) {
       console.error('Unable to save PI records to Supabase:', error);
       setMessage('บันทึกลงฐานข้อมูลไม่สำเร็จ ข้อมูลถูกเก็บไว้ในเครื่องนี้ชั่วคราว');
@@ -643,12 +703,17 @@ export default function PiRecordPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1700px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[1950px] border-collapse text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                 <tr>
-                  {columns.map(({ key, label }) => (
-                    <th key={key} className="whitespace-nowrap border-r border-slate-200 px-3 py-3 font-bold last:border-r-0">
-                      {label}
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      className={`whitespace-nowrap border-r border-slate-200 px-3 py-3 font-bold last:border-r-0 ${
+                        (col as any).align === 'right' ? 'text-right' : 'text-left'
+                      }`}
+                    >
+                      {col.label}
                     </th>
                   ))}
                 </tr>
@@ -656,15 +721,22 @@ export default function PiRecordPage() {
               <tbody className="divide-y divide-slate-100">
                 {filteredRecords.map((record) => (
                   <tr key={record.id} className="transition hover:bg-blue-50/40">
-                    {columns.map(({ key }) => {
+                    {columns.map((col) => {
+                      const key = col.key;
                       const link =
                         key === 'linkFile'
                           ? getLinkDetails(record[key], record.linkFileUrl)
                           : key === 'file'
                           ? getLinkDetails(record[key], record.fileUrl)
                           : null;
+                      const isRight = (col as any).align === 'right';
                       return (
-                        <td key={key} className="max-w-64 border-r border-slate-100 px-3 py-3 align-top text-slate-600 last:border-r-0">
+                        <td
+                          key={key}
+                          className={`max-w-64 border-r border-slate-100 px-3 py-3 align-top text-slate-600 last:border-r-0 ${
+                            isRight ? 'text-right font-medium text-slate-800' : ''
+                          }`}
+                        >
                           {link ? (
                             <a
                               href={link.href}
@@ -765,7 +837,7 @@ export default function PiRecordPage() {
                       <div>
                         <h3 className="text-sm font-bold text-slate-800">ยังไม่มีรูปแบบไฟล์ที่ถูกต้อง?</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ 13 รายการ พร้อมตัวอย่างการกรอกข้อมูล
+                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ 15 รายการ พร้อมตัวอย่างการกรอกข้อมูล
                         </p>
                       </div>
                     </div>
@@ -837,7 +909,7 @@ export default function PiRecordPage() {
                   <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/80">
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle2 size={16} className="text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-700">13 หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
+                      <span className="text-xs font-bold text-slate-700">15 หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {columns.map(({ label }) => (
@@ -954,13 +1026,18 @@ export default function PiRecordPage() {
 
                   {/* Preview Table */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs max-h-72 overflow-x-auto overflow-y-auto">
-                    <table className="w-full min-w-[1500px] border-collapse text-left text-xs bg-white">
+                    <table className="w-full min-w-[1950px] border-collapse text-left text-xs bg-white">
                       <thead className="bg-slate-100/90 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
                         <tr>
                           <th className="px-3 py-2.5 font-bold border-r border-slate-200 w-12 text-center text-slate-400">#</th>
-                          {columns.map(({ key, label }) => (
-                            <th key={key} className="whitespace-nowrap border-r border-slate-200 px-3 py-2.5 font-bold last:border-r-0">
-                              {label}
+                          {columns.map((col) => (
+                            <th
+                              key={col.key}
+                              className={`whitespace-nowrap border-r border-slate-200 px-3 py-2.5 font-bold last:border-r-0 ${
+                                (col as any).align === 'right' ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {col.label}
                             </th>
                           ))}
                         </tr>
@@ -971,10 +1048,17 @@ export default function PiRecordPage() {
                             <td className="px-3 py-2 border-r border-slate-100 text-center font-bold text-slate-400">
                               {index + 1}
                             </td>
-                            {columns.map(({ key }) => {
+                            {columns.map((col) => {
+                              const key = col.key;
                               const val = record[key];
+                              const isRight = (col as any).align === 'right';
                               return (
-                                <td key={key} className="max-w-60 truncate border-r border-slate-100 px-3 py-2 text-slate-600 last:border-r-0">
+                                <td
+                                  key={key}
+                                  className={`max-w-60 truncate border-r border-slate-100 px-3 py-2 text-slate-600 last:border-r-0 ${
+                                    isRight ? 'text-right font-medium text-slate-800' : ''
+                                  }`}
+                                >
                                   {val || <span className="text-slate-300 italic">-</span>}
                                 </td>
                               );
