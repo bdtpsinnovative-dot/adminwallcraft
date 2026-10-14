@@ -270,6 +270,107 @@ function getDocumentBadge(value: string, helperUrl?: string, isFile = false) {
   };
 }
 
+function getEtdBadge(value: string) {
+  const text = (value || '').trim();
+  if (!text || text === '-') {
+    return {
+      className: 'bg-slate-50 text-slate-400 border-slate-200/60',
+      dotClassName: 'bg-slate-300',
+      label: '-'
+    };
+  }
+
+  const lower = text.toLowerCase();
+
+  // 1. รอชำระ
+  if (lower.includes('รอชำระ') || lower.includes('payment') || lower.includes('unpaid')) {
+    return {
+      className: 'bg-rose-50 text-rose-700 border-rose-200/90 font-bold shadow-2xs',
+      dotClassName: 'bg-rose-500 animate-pulse',
+      label: text
+    };
+  }
+
+  // 2. รอสั่ง
+  if (lower.includes('รอสั่ง') || lower.includes('pending order')) {
+    return {
+      className: 'bg-amber-50 text-amber-700 border-amber-200/90 font-semibold shadow-2xs',
+      dotClassName: 'bg-amber-500',
+      label: text
+    };
+  }
+
+  // 3. รอโรงงานส่งมา Warehouse
+  if (lower.includes('รอโรงงาน') || lower.includes('โรงงานส่งมา warehouse')) {
+    return {
+      className: 'bg-indigo-50 text-indigo-700 border-indigo-200/90 font-semibold shadow-2xs',
+      dotClassName: 'bg-indigo-500',
+      label: text
+    };
+  }
+
+  // 4. โรงงานกำลังส่งมา
+  if (lower.includes('กำลังส่ง') || lower.includes('shipping') || lower.includes('transit')) {
+    return {
+      className: 'bg-sky-50 text-sky-700 border-sky-200/90 font-semibold shadow-2xs',
+      dotClassName: 'bg-sky-500',
+      label: text
+    };
+  }
+
+  // 5. ของถึง Warehouse แล้ว
+  if (lower.includes('ถึง warehouse') || lower.includes('warehouse แล้ว')) {
+    return {
+      className: 'bg-teal-50 text-teal-700 border-teal-200/90 font-bold shadow-2xs',
+      dotClassName: 'bg-teal-500',
+      label: text
+    };
+  }
+
+  // 6. ของอยู่ในสต๊อกแล้ว
+  if (lower.includes('สต๊อก') || lower.includes('stock')) {
+    return {
+      className: 'bg-emerald-50 text-emerald-700 border-emerald-200/90 font-bold shadow-2xs',
+      dotClassName: 'bg-emerald-500',
+      label: text
+    };
+  }
+
+  // 7. รอส่งให้ลูกค้า
+  if (lower.includes('รอส่งให้ลูกค้า') || lower.includes('รอส่งลูกค้า')) {
+    return {
+      className: 'bg-yellow-50 text-yellow-800 border-yellow-200/90 font-bold shadow-2xs',
+      dotClassName: 'bg-yellow-500',
+      label: text
+    };
+  }
+
+  // 8. ของถึงลูกค้าแล้ว / ส่งมอบแล้ว
+  if (lower.includes('ถึงลูกค้า') || lower.includes('delivered') || lower.includes('สำเร็จ')) {
+    return {
+      className: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold shadow-2xs',
+      dotClassName: 'bg-emerald-600',
+      label: text
+    };
+  }
+
+  // 9. งาน Event
+  if (lower.includes('event') || lower.includes('อีเวนต์') || lower.includes('งาน')) {
+    return {
+      className: 'bg-purple-50 text-purple-700 border-purple-200/90 font-semibold shadow-2xs',
+      dotClassName: 'bg-purple-500',
+      label: text
+    };
+  }
+
+  // Default / Dates / Other text
+  return {
+    className: 'bg-slate-100 text-slate-700 border-slate-200 font-medium',
+    dotClassName: 'bg-slate-400',
+    label: text
+  };
+}
+
 const initialManualForm: Record<ColumnKey, string> = {
   piSupplier: '',
   date: '',
@@ -825,6 +926,17 @@ export default function PiRecordPage() {
                   <tr key={record.id} className="transition hover:bg-blue-50/40">
                     {columns.map((col) => {
                       const key = col.key;
+                      if (key === 'etd') {
+                        const etdBadge = getEtdBadge(record.etd);
+                        return (
+                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-3 align-middle text-slate-600">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${etdBadge.className}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
+                              <span>{etdBadge.label}</span>
+                            </span>
+                          </td>
+                        );
+                      }
                       const badge =
                         key === 'linkFile'
                           ? getDocumentBadge(record[key], record.linkFileUrl, false)
@@ -1271,6 +1383,17 @@ export default function PiRecordPage() {
                               const key = col.key;
                               const val = record[key];
                               const isRight = (col as any).align === 'right';
+                              if (key === 'etd') {
+                                const etdBadge = getEtdBadge(val);
+                                return (
+                                  <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-1.5 align-middle">
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${etdBadge.className}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
+                                      <span>{etdBadge.label}</span>
+                                    </span>
+                                  </td>
+                                );
+                              }
                               return (
                                 <td
                                   key={key}
