@@ -36,7 +36,7 @@ export default async function DashboardPage({
       mappingsResult
     ] = await Promise.all([
       supabase.auth.getUser(token),
-      supabase.from('profiles').select('id, full_name, team_id, role'),
+      supabase.from('profiles').select('id, full_name, team_id, role, email'),
       supabase.from('project_types').select('id, name'),
       supabase.from('product_categories').select('id, name'),
       supabase.from('teams').select('id, team_name').order('team_name'),

@@ -56,7 +56,7 @@ export default function ExportExcelButton({
   // ดึง Master Data อัตโนมัติหากหน้าเรียกใช้ไม่ได้ส่ง props มา (เช่น หน้า checkins หรือ companies)
   React.useEffect(() => {
     if (loadedProfiles.length === 0) {
-      supabase.from('profiles').select('id, full_name').then(({ data }) => {
+      supabase.from('profiles').select('id, full_name, email').then(({ data }) => {
         if (data) setLoadedProfiles(data);
       });
     }
@@ -97,7 +97,9 @@ export default function ExportExcelButton({
           project_note: proj.projectNote ?? proj.project_note ?? '',
           customer_name: order.customerName || order.customer_name || '-',
           phone: order.phone || '-',
-          sales_name: order.salesName || order.salesEmail || 'ไม่ระบุ',
+          sales_name: order.salesName || 'ไม่ระบุ',
+          sales_email: order.salesEmail || order.sales_email || '',
+          user_id: order.userId || order.user_id,
           team_name: order.teamName || 'ทีมไม่ระบุ',
           company_name: order.companyName || '-',
           source_name: order.source || (order.isCsv ? 'File Import' : (order.auditLog ? 'Mobile App (ลงพื้นที่)' : 'File Import')),
@@ -137,6 +139,13 @@ export default function ExportExcelButton({
     const map: Record<string, string> = {};
     const list = loadedProfiles.length > 0 ? loadedProfiles : profiles;
     list.forEach((p: any) => { if (p?.id) map[p.id] = p.full_name; });
+    return map;
+  }, [loadedProfiles, profiles]);
+
+  const profileEmailMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const list = loadedProfiles.length > 0 ? loadedProfiles : profiles;
+    list.forEach((p: any) => { if (p?.id && p?.email) map[p.id] = p.email; });
     return map;
   }, [loadedProfiles, profiles]);
 
@@ -268,6 +277,7 @@ export default function ExportExcelButton({
     const phone = (rawPhone && rawPhone !== '-') ? rawPhone : fallbackPhone;
 
     const salesName = item.sales_name || item.salesName || profileMap[userId] || (userId ? 'พนักงานที่ถูกลบ' : 'ไม่ระบุ');
+    const salesEmail = item.sales_email || item.salesEmail || profileEmailMap[userId] || '';
     const teamName = item.team_name || item.teamName || teamMap[teamId] || (teamId ? 'ทีมไม่ระบุ' : '-');
     const customerTypeName = item.customerTypeName || customerTypeMap[customerTypeId] || '-';
 
@@ -306,6 +316,7 @@ export default function ExportExcelButton({
       phone,
       fallbackPhone,
       salesName,
+      salesEmail,
       teamName,
       companyName,
       customerTypeName,
@@ -491,6 +502,7 @@ export default function ExportExcelButton({
           'ไตรมาส (Estimate)': p.queueLevel ? `Q${p.queueLevel}` : '-',
           'ปีโครงการ': p.projectYear || '-',
           'พนักงานขาย': p.salesName,
+          'อีเมลเซลส์': p.salesEmail || '-',
           'ทีมขาย': p.teamName,
           'ชื่อลูกค้า / ผู้ติดต่อ': p.customerName,
           'เบอร์โทรศัพท์': p.phone,
@@ -535,20 +547,15 @@ export default function ExportExcelButton({
       } else if (format === 'ODOO_EXCEL') {
         setExportProgress('กำลังสร้างไฟล์ Excel รูปแบบ Odoo...');
         const odooRows = normalizedList.map((p) => {
-          // หากไม่มีชื่อโปรเจกต์ ให้ใช้ชื่อบริษัท หรือชื่อลูกค้า เพื่อให้ Odoo CRM มีหัวข้อชัดเจน ไม่กลายเป็นบั๊กไม่มีชื่อ
-          let pName = p.projectName;
-          if (!pName || pName === 'ไม่มีการระบุโครงการ' || pName === 'ไม่ระบุชื่อโปรเจกต์' || pName === '-') {
-            if (p.companyName && p.companyName !== '-') {
-              pName = `[พบลูกค้า] ${p.companyName}`;
-            } else if (p.customerName && p.customerName !== '-') {
-              pName = `[พบลูกค้า] ${p.customerName}`;
-            } else {
-              pName = 'ไม่มีการระบุโครงการ';
-            }
-          }
+          // ดึงชื่อโปรเจกต์ตรงตามที่บันทึกไว้ในระบบ (ไม่ใส่ prefix [พบลูกค้า] นำหน้า)
+          const pName = (p.projectName && p.projectName.trim() !== '' && p.projectName !== '-')
+            ? p.projectName
+            : 'ไม่มีการระบุโครงการ';
 
           // สุ่ม/ดึงเบอร์ติดต่อที่มีอยู่ (หากเบอร์ลูกค้าว่าง หรือเป็นขีด)
           const validPhone = (p.phone && p.phone !== '-') ? p.phone : (p.fallbackPhone || '');
+          // ดึงอีเมลพนักงานขายแทนชื่อ เพื่อให้อิมพอร์ตเข้า Odoo CRM ได้ตรงกับ User
+          const salesperson = (p.salesEmail || '').trim() || ((p.salesName && p.salesName !== 'ไม่ระบุ' && p.salesName !== 'พนักงานที่ถูกลบ') ? p.salesName : '');
 
           return {
             'Project name': pName,
@@ -557,7 +564,7 @@ export default function ExportExcelButton({
             'Pipeline': mapOdooPipeline(p.teamName, p.productCategoryName),
             'Project Type': mapOdooProjectType(p.projectTypeName, p.areaSqm),
             'Closing Potential': p.interestLevel === '-' ? '' : p.interestLevel,
-            'Salesperson': (p.salesName === 'ไม่ระบุ' || p.salesName === 'พนักงานที่ถูกลบ') ? '' : p.salesName,
+            'Salesperson': salesperson,
             'Product Group': p.productCategoryName === '-' ? '' : p.productCategoryName,
             'Source': p.sourceName,
             'Architecture': p.architectFormatted === '-' ? '' : p.architectFormatted,
@@ -602,6 +609,7 @@ export default function ExportExcelButton({
           'ไตรมาส': p.queueLevel ? `Q${p.queueLevel}` : '-',
           'ปีโครงการ': p.projectYear || '-',
           'พนักงานขาย': p.salesName,
+          'อีเมลเซลส์': p.salesEmail || '-',
           'ทีมขาย': p.teamName,
           'ชื่อลูกค้า / ผู้ติดต่อ': p.customerName,
           'เบอร์โทรศัพท์': p.phone,

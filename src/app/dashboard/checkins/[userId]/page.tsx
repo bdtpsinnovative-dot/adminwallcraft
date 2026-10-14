@@ -217,6 +217,7 @@ export default async function UserCheckInHistoryPage({
 
       ordersList.push({
         orderId: order.id,
+        userId: order.user_id,
         salesName: dbSalesName || 'ไม่ระบุเซลส์', 
         salesEmail: dbSalesEmail || '',
         teamName: dbTeamName || 'ไม่มีทีม', 

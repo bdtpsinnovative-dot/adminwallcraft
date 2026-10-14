@@ -239,6 +239,7 @@ export default async function CompanyCheckInHistoryPage({
       const dateUTC = new Date(order.created_at);
       ordersList.push({
         orderId: order.id,
+        userId: order.user_id,
         salesName: dbSalesName || 'ไม่ระบุเซลส์',
         teamName: dbTeamName || 'ไม่มีทีม', // ✨ ส่งชื่อทีมเข้า Excel
         customerName: order.customer_name || 'ไม่ระบุชื่อลูกค้า',
