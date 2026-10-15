@@ -18,7 +18,7 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
   const [userRole, setUserRole] = useState<string | null>(null); // สเตทรักษายศของผู้ใช้ (admin / user)
   const pathname = usePathname();
   const router = useRouter();
-  const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog');
+  const isPublicPage = pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/catalog') || pathname.startsWith('/sso');
 
   // Keep the server-readable cookie synchronized when Supabase silently
   // refreshes an access token. Without this, an old cookie can work locally
