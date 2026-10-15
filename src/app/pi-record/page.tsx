@@ -38,13 +38,14 @@ const columns = [
   { key: 'file', label: 'File' },
   { key: 'saleName', label: 'Sale_Name' },
   { key: 'projectName', label: 'Project_name' },
+  { key: 'requestedDate', label: 'Requested_Date' },
   { key: 'paymentDate', label: 'Payment_Date' },
-  { key: 'deliveredDate', label: 'Delivered_Date' },
+  { key: 'shippingMethod', label: 'Shipping_Method' },
   { key: 'dateOrder', label: 'Date_Order / วันที่ลูกค้าชำระเงิน' },
 ] as const;
 
 type ColumnKey = (typeof columns)[number]['key'];
-type PiRecord = Record<ColumnKey, string> & { id: string; linkFileUrl: string; fileUrl: string };
+type PiRecord = Record<ColumnKey, string> & { id: string; linkFileUrl: string; fileUrl: string; deliveredDate?: string };
 
 type DatabasePiRecord = {
   id: string;
@@ -62,8 +63,10 @@ type DatabasePiRecord = {
   file_url: string;
   sale_name: string;
   project_name: string;
+  requested_date?: string;
   payment_date: string;
-  delivered_date: string;
+  shipping_method?: string;
+  delivered_date?: string;
   date_order: string;
 };
 
@@ -121,45 +124,70 @@ const headerAliases: Record<ColumnKey, string[]> = {
   file: ['file', 'file_name', 'filename', 'ชื่อไฟล์', 'ไฟล์'],
   saleName: ['sale_name', 'sale name', 'salename', 'sale', 'ชื่อเซลล์', 'ผู้ขาย'],
   projectName: ['project_name', 'project name', 'projectname', 'project', 'ชื่อโครงการ', 'โครงการ'],
+  requestedDate: [
+    'requested_date',
+    'requested date',
+    'requesteddate',
+    'request_date',
+    'request date',
+    'requestdate',
+    'requested',
+    'วันที่ขอ',
+    'กำหนดที่ต้องการ',
+    'วันที่ต้องการ',
+  ],
   paymentDate: ['payment_date', 'payment date', 'paymentdate', 'วันชำระเงิน', 'วันที่ชำระ'],
-  deliveredDate: ['delivered_date', 'delivered date', 'delivereddate', 'วันส่งมอบ', 'วันที่ส่งของ'],
+  shippingMethod: [
+    'shipping_method',
+    'shipping method',
+    'shippingmethod',
+    'shipping',
+    'shipping_type',
+    'shipping type',
+    'ขนส่ง',
+    'วิธีการจัดส่ง',
+    'วิธีการขนส่ง',
+    'การจัดส่ง',
+  ],
   dateOrder: ['date_order / วันที่ลูกค้าชำระเงิน', 'date_order', 'date order', 'dateorder', 'วันที่ลูกค้าชำระเงิน', 'order date'],
 };
 
 const sampleTemplateRows = [
   {
-    'PI-Supplier': 'BD-2026-01-12',
-    'Date': '12/01/2026',
-    'Supplier': 'SHENGZHOUSHI MINBANG NEW MATERIAL (MCM)',
-    'Link/File': 'https://drive.google.com/sample-file-1.pdf',
-    'จำนวนเงิน (Yuan)': '150,000.00',
-    'จำนวนเงิน ($)': '21,500.00',
-    'ETD': 'ของถึง Warehouse แล้ว',
-    'Band': 'WallCraft-Craft Stone',
-    'Order_NO.': 'ORD-9842',
-    'File': 'PI_Doc_001.pdf',
-    'Sale_Name': 'สมชาย ใจดี',
-    'Project_name': 'Villa Phuket Residence',
-    'Payment_Date': '2026-10-05',
-    'Delivered_Date': '2026-10-28',
-    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-02',
+    'PI-Supplier': 'HYM25122501',
+    'Date': '25/12/2025',
+    'Supplier': 'Shangjie Xiaowugeshuo Deban Furniture Store',
+    'Link/File': 'https://docs.google.com/sample-file-1',
+    'จำนวนเงิน (Yuan)': '',
+    'จำนวนเงิน ($)': '$34,570.00',
+    'ETD': 'ของอยู่ในสต็อกแล้ว',
+    'Band': 'ZenSlab',
+    'Order_NO.': '',
+    'File': '',
+    'Sale_Name': '',
+    'Project_name': '',
+    'Requested_Date': '',
+    'Payment_Date': '',
+    'Shipping_Method': '',
+    'Date_Order / วันที่ลูกค้าชำระเงิน': '',
   },
   {
-    'PI-Supplier': 'MLH20260109RAQ',
-    'Date': '01/09/2026',
-    'Supplier': 'Gooday (WPC)',
+    'PI-Supplier': 'HYM25122501-2',
+    'Date': '25/12/2025',
+    'Supplier': 'Shangjie Xiaowugeshuo Deban Furniture Store',
     'Link/File': 'https://drive.google.com/sample-file-2.pdf',
-    'จำนวนเงิน (Yuan)': '85,000.00',
-    'จำนวนเงิน ($)': '12,200.00',
-    'ETD': 'ของถึง Warehouse แล้ว',
-    'Band': 'WallCraft-Essential',
-    'Order_NO.': 'ORD-9843',
-    'File': 'PI_Doc_002.pdf',
-    'Sale_Name': 'วิภาดา รวยรื่น',
-    'Project_name': 'The Riverfront Condo',
-    'Payment_Date': '2026-10-08',
-    'Delivered_Date': '2026-11-05',
-    'Date_Order / วันที่ลูกค้าชำระเงิน': '2026-10-04',
+    'จำนวนเงิน (Yuan)': '',
+    'จำนวนเงิน ($)': '$3,300.00',
+    'ETD': 'รอถึง',
+    'Band': 'ZenSlab',
+    'Order_NO.': 'D2609055',
+    'File': 'https://drive.google.com/sample-file-2.pdf',
+    'Sale_Name': 'Bonus',
+    'Project_name': 'MR. David Miller',
+    'Requested_Date': '1/7/2027',
+    'Payment_Date': '02/10/2026',
+    'Shipping_Method': 'Sea Shipping',
+    'Date_Order / วันที่ลูกค้าชำระเงิน': '02/10/2026',
   },
 ];
 
@@ -192,13 +220,15 @@ function fromDatabaseRecord(record: DatabasePiRecord): PiRecord {
     fileUrl: record.file_url || '',
     saleName: record.sale_name || '',
     projectName: record.project_name || '',
+    requestedDate: record.requested_date || '',
     paymentDate: record.payment_date || '',
+    shippingMethod: record.shipping_method || '',
     deliveredDate: record.delivered_date || '',
     dateOrder: record.date_order || '',
   };
 }
 
-function toDatabaseRecord(record: PiRecord, includeAmounts = false): DatabasePiRecord {
+function toDatabaseRecord(record: PiRecord, includeNewColumns = true, includeAmounts = true): DatabasePiRecord {
   const dbRecord: any = {
     id: record.id,
     pi_supplier: record.piSupplier,
@@ -214,12 +244,16 @@ function toDatabaseRecord(record: PiRecord, includeAmounts = false): DatabasePiR
     sale_name: record.saleName,
     project_name: record.projectName,
     payment_date: record.paymentDate,
-    delivered_date: record.deliveredDate,
+    delivered_date: (record as any).deliveredDate || '',
     date_order: record.dateOrder,
   };
   if (includeAmounts) {
     dbRecord.amount_yuan = record.amountYuan || '';
     dbRecord.amount_dollar = record.amountDollar || '';
+  }
+  if (includeNewColumns) {
+    dbRecord.requested_date = record.requestedDate || '';
+    dbRecord.shipping_method = record.shippingMethod || '';
   }
   return dbRecord;
 }
@@ -384,8 +418,9 @@ const initialManualForm: Record<ColumnKey, string> = {
   file: '',
   saleName: '',
   projectName: '',
+  requestedDate: '',
   paymentDate: '',
-  deliveredDate: '',
+  shippingMethod: '',
   dateOrder: '',
 };
 
@@ -454,10 +489,15 @@ export default function PiRecordPage() {
       }
 
       // Migrate records previously stored only in this browser on the first load.
-      const migratePayload = savedRecords.map((r) => toDatabaseRecord(r, true));
+      const migratePayload = savedRecords.map((r) => toDatabaseRecord(r, true, true));
       let { error: migrateError } = await supabase.from('pi_records').upsert(migratePayload, { onConflict: 'id' });
+      if (migrateError && (migrateError.message?.includes('requested_date') || migrateError.message?.includes('shipping_method') || migrateError.message?.includes('schema cache'))) {
+        const fallbackMigrateWithoutNew = savedRecords.map((r) => toDatabaseRecord(r, false, true));
+        const res = await supabase.from('pi_records').upsert(fallbackMigrateWithoutNew, { onConflict: 'id' });
+        migrateError = res.error;
+      }
       if (migrateError && (migrateError.message?.includes('amount_yuan') || migrateError.message?.includes('schema cache'))) {
-        const fallbackMigrate = savedRecords.map((r) => toDatabaseRecord(r, false));
+        const fallbackMigrate = savedRecords.map((r) => toDatabaseRecord(r, false, false));
         const res = await supabase.from('pi_records').upsert(fallbackMigrate, { onConflict: 'id' });
         migrateError = res.error;
       }
@@ -484,10 +524,15 @@ export default function PiRecordPage() {
       console.error('Unable to save PI records:', error);
       setMessage('บันทึกข้อมูลในเบราว์เซอร์ไม่สำเร็จ');
     }
-    const payloadWithAmounts = nextRecords.map((r) => toDatabaseRecord(r, true));
-    let { error } = await supabase.from('pi_records').upsert(payloadWithAmounts, { onConflict: 'id' });
+    const fullPayload = nextRecords.map((r) => toDatabaseRecord(r, true, true));
+    let { error } = await supabase.from('pi_records').upsert(fullPayload, { onConflict: 'id' });
+    if (error && (error.message?.includes('requested_date') || error.message?.includes('shipping_method') || error.message?.includes('schema cache'))) {
+      const fallbackWithoutNew = nextRecords.map((r) => toDatabaseRecord(r, false, true));
+      const res = await supabase.from('pi_records').upsert(fallbackWithoutNew, { onConflict: 'id' });
+      error = res.error;
+    }
     if (error && (error.message?.includes('amount_yuan') || error.message?.includes('schema cache'))) {
-      const fallbackPayload = nextRecords.map((r) => toDatabaseRecord(r, false));
+      const fallbackPayload = nextRecords.map((r) => toDatabaseRecord(r, false, false));
       const res = await supabase.from('pi_records').upsert(fallbackPayload, { onConflict: 'id' });
       error = res.error;
     }
@@ -903,7 +948,7 @@ export default function PiRecordPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1950px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[2100px] border-collapse text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                 <tr>
                   {columns.map((col) => (
@@ -934,6 +979,30 @@ export default function PiRecordPage() {
                               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
                               <span>{etdBadge.label}</span>
                             </span>
+                          </td>
+                        );
+                      }
+                      if (key === 'shippingMethod') {
+                        const sm = record.shippingMethod || '';
+                        const isSea = sm.toLowerCase().includes('sea');
+                        const isAir = sm.toLowerCase().includes('air');
+                        return (
+                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-3 align-middle text-slate-600">
+                            {sm ? (
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                                isSea
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200/90'
+                                  : isAir
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200/90'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200/80'
+                              }`}>
+                                {isSea && <span>🚢</span>}
+                                {isAir && <span>✈️</span>}
+                                <span>{sm}</span>
+                              </span>
+                            ) : (
+                              '-'
+                            )}
                           </td>
                         );
                       }
@@ -1033,7 +1102,7 @@ export default function PiRecordPage() {
                     {previewData
                       ? `ตรวจสอบความถูกต้องของข้อมูลจากไฟล์ ${previewData.fileName}`
                       : modalTab === 'manual'
-                      ? 'กรอกข้อมูล 15 ช่องเรียงลำดับเดียวกับตารางหน้าแสดงผล'
+                      ? 'กรอกข้อมูล 16 ช่องเรียงลำดับเดียวกับตารางหน้าแสดงผล'
                       : 'รองรับไฟล์ Excel (.xlsx, .xls) และ CSV (.csv)'}
                   </p>
                 </div>
@@ -1051,7 +1120,7 @@ export default function PiRecordPage() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <Plus size={14} /> กรอกข้อมูล (15 ช่อง)
+                      <Plus size={14} /> กรอกข้อมูล (16 ช่อง)
                     </button>
                     <button
                       type="button"
@@ -1088,17 +1157,25 @@ export default function PiRecordPage() {
             <div className="p-6 overflow-y-auto min-h-0 flex-1">
               {!previewData ? (
                 modalTab === 'manual' ? (
-                  /* ── TAB 1: MANUAL ADD FORM (15 FIELDS) ── */
+                  /* ── TAB 1: MANUAL ADD FORM (16 FIELDS) ── */
                   <form onSubmit={handleManualSubmit} className="space-y-4">
                     <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5">
                       <p className="text-xs font-semibold text-blue-800">
-                        กรอกข้อมูลเรียงตามลำดับคอลัมน์ 1-15 (แนวเดียวกับตารางหน้าแสดงผลและแบบฟอร์ม Excel รูปที่ 2)
+                        กรอกข้อมูลเรียงตามลำดับคอลัมน์ 1-16 (แนวเดียวกับตารางหน้าแสดงผลและแบบฟอร์ม Excel)
                       </p>
                     </div>
+
+                    <datalist id="shipping-method-options">
+                      <option value="Sea Shipping" />
+                      <option value="Air Shipping" />
+                      <option value="Land Shipping" />
+                      <option value="Express" />
+                    </datalist>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                       {columns.map((col, idx) => {
                         const isAmount = col.key === 'amountYuan' || col.key === 'amountDollar';
+                        const isShipping = col.key === 'shippingMethod';
                         return (
                           <div key={col.key} className="space-y-1">
                             <label className="flex items-center justify-between text-xs font-bold text-slate-700">
@@ -1111,14 +1188,20 @@ export default function PiRecordPage() {
                                   ยอดเงิน
                                 </span>
                               )}
+                              {isShipping && (
+                                <span className="text-[10px] font-bold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200/60">
+                                  เลือกหรือพิมพ์
+                                </span>
+                              )}
                             </label>
                             <input
                               type="text"
+                              list={isShipping ? 'shipping-method-options' : undefined}
                               value={manualForm[col.key]}
                               onChange={(e) =>
                                 setManualForm((prev) => ({ ...prev, [col.key]: e.target.value }))
                               }
-                              placeholder={`ระบุ ${col.label}...`}
+                              placeholder={isShipping ? 'เช่น Sea Shipping, Air Shipping' : `ระบุ ${col.label}...`}
                               className={`w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 ${
                                 isAmount ? 'text-right font-semibold' : ''
                               }`}
@@ -1167,7 +1250,7 @@ export default function PiRecordPage() {
                       <div>
                         <h3 className="text-sm font-bold text-slate-800">ยังไม่มีรูปแบบไฟล์ที่ถูกต้อง?</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ 15 รายการ พร้อมตัวอย่างการกรอกข้อมูล
+                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ 16 รายการ พร้อมตัวอย่างการกรอกข้อมูล
                         </p>
                       </div>
                     </div>
@@ -1239,7 +1322,7 @@ export default function PiRecordPage() {
                   <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/80">
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle2 size={16} className="text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-700">15 หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
+                      <span className="text-xs font-bold text-slate-700">16 หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {columns.map(({ label }) => (
@@ -1357,7 +1440,7 @@ export default function PiRecordPage() {
 
                   {/* Preview Table */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs max-h-72 overflow-x-auto overflow-y-auto">
-                    <table className="w-full min-w-[1950px] border-collapse text-left text-xs bg-white">
+                    <table className="w-full min-w-[2100px] border-collapse text-left text-xs bg-white">
                       <thead className="bg-slate-100/90 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
                         <tr>
                           <th className="px-3 py-2.5 font-bold border-r border-slate-200 w-12 text-center text-slate-400">#</th>
@@ -1391,6 +1474,29 @@ export default function PiRecordPage() {
                                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
                                       <span>{etdBadge.label}</span>
                                     </span>
+                                  </td>
+                                );
+                              }
+                              if (key === 'shippingMethod') {
+                                const isSea = (val || '').toLowerCase().includes('sea');
+                                const isAir = (val || '').toLowerCase().includes('air');
+                                return (
+                                  <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-1.5 align-middle">
+                                    {val ? (
+                                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${
+                                        isSea
+                                          ? 'bg-sky-50 text-sky-700 border-sky-200/90'
+                                          : isAir
+                                          ? 'bg-purple-50 text-purple-700 border-purple-200/90'
+                                          : 'bg-slate-50 text-slate-700 border-slate-200/80'
+                                      }`}>
+                                        {isSea && <span>🚢</span>}
+                                        {isAir && <span>✈️</span>}
+                                        <span>{val}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-300 italic">-</span>
+                                    )}
                                   </td>
                                 );
                               }
