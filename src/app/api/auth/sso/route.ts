@@ -6,11 +6,21 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 const SINGAPORE_SUPABASE_URL = process.env.SINGAPORE_SUPABASE_URL || 'https://gshppxgvdrmbfcxsxeph.supabase.co';
 const SINGAPORE_SUPABASE_ANON_KEY = process.env.SINGAPORE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzaHBweGd2ZHJtYmZjeHN4ZXBoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMjQzODAsImV4cCI6MjEwNzYwMDM4MH0.lhpLOeb7oY0e-ZCIgSBgzHfPAgAzK8eqFgUPg9te8XM';
 
+function getBaseUrl(request: NextRequest) {
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'admin.wallcraftthailand.com';
+  if (host.includes('localhost') || host.includes('127.0.0.1')) {
+    return 'https://admin.wallcraftthailand.com';
+  }
+  const proto = request.headers.get('x-forwarded-proto') || 'https';
+  return `${proto}://${host}`;
+}
+
 export async function GET(request: NextRequest) {
+  const baseUrl = getBaseUrl(request);
   try {
     const token = request.nextUrl.searchParams.get('token');
     if (!token) {
-      return NextResponse.redirect(new URL('/login?error=missing_token', request.url));
+      return NextResponse.redirect(new URL('/login?error=missing_token', baseUrl));
     }
 
     // 1. ตรวจสอบ Token กับ Supabase สิงคโปร์ (Employee Portal)
@@ -19,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     if (userError || !userData?.user?.email) {
       console.error('SSO Singapore verify error:', userError?.message);
-      return NextResponse.redirect(new URL('/login?error=invalid_portal_session', request.url));
+      return NextResponse.redirect(new URL('/login?error=invalid_portal_session', baseUrl));
     }
 
     const email = userData.user.email.toLowerCase().trim();
@@ -52,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     if (linkError || !linkData?.properties?.hashed_token) {
       console.error('SSO generateLink failed:', linkError?.message);
-      return NextResponse.redirect(new URL('/login?error=wallcraft_user_not_found', request.url));
+      return NextResponse.redirect(new URL('/login?error=wallcraft_user_not_found', baseUrl));
     }
 
     // 3. แลกเปลี่ยน Magic Token เป็น Session ของ Wallcraft (ได้ทั้ง access_token และ refresh_token)
@@ -67,13 +77,13 @@ export async function GET(request: NextRequest) {
 
     if (verifyError || !verifyData?.session) {
       console.error('SSO verifyOtp failed:', verifyError?.message);
-      return NextResponse.redirect(new URL('/login?error=sso_exchange_failed', request.url));
+      return NextResponse.redirect(new URL('/login?error=sso_exchange_failed', baseUrl));
     }
 
     const { access_token, refresh_token } = verifyData.session;
 
     // 4. ส่ง Token ไปยังบริดจ์หน้า /sso เพื่อเซฟเข้า localStorage และเซ็ตคุกกี้ admin_token
-    const ssoLandingUrl = new URL('/sso', request.url);
+    const ssoLandingUrl = new URL('/sso', baseUrl);
     ssoLandingUrl.searchParams.set('access_token', access_token);
     if (refresh_token) {
       ssoLandingUrl.searchParams.set('refresh_token', refresh_token);
@@ -92,6 +102,6 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (err: any) {
     console.error('SSO route exception:', err);
-    return NextResponse.redirect(new URL('/login?error=sso_server_error', request.url));
+    return NextResponse.redirect(new URL('/login?error=sso_server_error', baseUrl));
   }
 }
