@@ -144,10 +144,21 @@ const headerAliases: Record<ColumnKey, string[]> = {
     'shipping',
     'shipping_type',
     'shipping type',
+    'shipment',
+    'shipment_method',
+    'shipment method',
+    'delivery',
+    'delivery_method',
+    'delivery method',
     'ขนส่ง',
     'วิธีการจัดส่ง',
     'วิธีการขนส่ง',
     'การจัดส่ง',
+    'ช่องทางการจัดส่ง',
+    'ช่องทางขนส่ง',
+    'สายเรือ',
+    'สายเรือ/ขนส่ง',
+    'sea/air',
   ],
   dateOrder: ['date_order / วันที่ลูกค้าชำระเงิน', 'date_order', 'date order', 'dateorder', 'วันที่ลูกค้าชำระเงิน', 'order date'],
 };
@@ -569,25 +580,22 @@ export default function PiRecordPage() {
 
   // Download Templates
   const downloadTemplateExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(sampleTemplateRows);
-    ws['!cols'] = columns.map(() => ({ wch: 24 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'PI_Record_Template');
-    XLSX.writeFile(wb, 'PI_Record_Template.xlsx');
+    const link = document.createElement('a');
+    link.href = '/PI_Record_Template.xlsx';
+    link.download = 'PI_Record_Template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     setShowDownloadMenu(false);
   };
 
   const downloadTemplateCsv = () => {
-    const csv = Papa.unparse(sampleTemplateRows);
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = '/PI_Record_Template.csv';
     link.download = 'PI_Record_Template.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
     setShowDownloadMenu(false);
   };
 
