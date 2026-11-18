@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Building2, Package,
   SearchCheck, ClipboardCheck, Sparkles, ImageIcon,
   Cloud, ImagePlus, UserPlus, HardDrive,
-  BookOpen, FileText, LogOut
+  BookOpen, FileText, LogOut, Smartphone, Phone, PhoneCall
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { clearAdminTokenCookie, saveAdminTokenCookie } from '@/lib/admin-auth-cookie';
@@ -110,6 +110,8 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
         { name: 'Dashboard Advance', path: '/dashboardadvance', icon: LayoutDashboard, color: 'blue', adminOnly: false },
         { name: 'จัดการบริษัทคู่ค้า', path: '/companies', icon: Building2, color: 'blue', adminOnly: true },
         { name: 'แมพชื่อบริษัท', path: '/company-mappings', icon: Sparkles, color: 'blue', adminOnly: true },
+        { name: 'สมุดเบอร์ลูกค้ากลาง', path: '/customer-contacts', icon: Phone, color: 'blue', adminOnly: true },
+        { name: 'ประวัติโทรคุยลูกค้า', path: '/call-logs', icon: PhoneCall, color: 'blue', adminOnly: true },
       ]
     },
     {
@@ -136,6 +138,7 @@ export default function RootLayoutClient({ children }: { children: React.ReactNo
       title: 'Team Management',
       items: [
         { name: 'จัดการทีม & พนักงาน', path: '/add-team', icon: UserPlus, color: 'blue', adminOnly: true },
+        { name: 'อัปเดตแอป & อุปกรณ์', path: '/app-updates', icon: Smartphone, color: 'blue', adminOnly: true },
         { name: 'เพิ่มโปรเจค xlsx & csv', path: '/upload', icon: HardDrive, color: 'blue', adminOnly: true },
       ]
     }

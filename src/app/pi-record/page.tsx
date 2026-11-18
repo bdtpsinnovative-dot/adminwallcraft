@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import {
@@ -21,7 +21,11 @@ import {
   FileText,
   File as FileIcon,
   ExternalLink,
-  Edit3
+  Edit3,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -41,11 +45,25 @@ const columns = [
   { key: 'requestedDate', label: 'Requested_Date' },
   { key: 'paymentDate', label: 'Payment_Date' },
   { key: 'shippingMethod', label: 'Shipping_Method' },
+  { key: 'deliveredDate', label: 'วันสินค้าถึง' },
   { key: 'dateOrder', label: 'Date_Order / วันที่ลูกค้าชำระเงิน' },
+  { key: 'lastUpdate', label: 'Last Update' },
 ] as const;
 
 type ColumnKey = (typeof columns)[number]['key'];
-type PiRecord = Record<ColumnKey, string> & { id: string; linkFileUrl: string; fileUrl: string; deliveredDate?: string };
+type PiRecord = Record<ColumnKey, string> & { id: string; linkFileUrl: string; fileUrl: string };
+
+const ETD_STATUS_OPTIONS = [
+  'รอชำระ',
+  'รอสั่ง',
+  'รอโรงงานส่งมา Warehouse',
+  'โรงงานกำลังส่งมา',
+  'ของถึง Warehouse แล้ว',
+  'ของอยู่ในสต๊อกแล้ว',
+  'รอส่งให้ลูกค้า',
+  'ของถึงลูกค้าแล้ว',
+  'งาน Event',
+] as const;
 
 type DatabasePiRecord = {
   id: string;
@@ -68,6 +86,7 @@ type DatabasePiRecord = {
   shipping_method?: string;
   delivered_date?: string;
   date_order: string;
+  last_update?: string;
 };
 
 interface PreviewData {
@@ -160,7 +179,30 @@ const headerAliases: Record<ColumnKey, string[]> = {
     'สายเรือ/ขนส่ง',
     'sea/air',
   ],
+  deliveredDate: [
+    'วันสินค้าถึง',
+    'วันที่สินค้าถึง',
+    'วันจัดส่งถึง',
+    'วันที่จัดส่งถึง',
+    'delivered_date',
+    'delivered date',
+    'delivereddate',
+    'delivery_date',
+    'delivery date',
+    'arrival_date',
+    'arrival date',
+  ],
   dateOrder: ['date_order / วันที่ลูกค้าชำระเงิน', 'date_order', 'date order', 'dateorder', 'วันที่ลูกค้าชำระเงิน', 'order date'],
+  lastUpdate: [
+    'last update',
+    'last_update',
+    'lastupdate',
+    'last updated',
+    'last_updated',
+    'อัปเดตล่าสุด',
+    'อัพเดทล่าสุด',
+    'วันที่อัปเดตล่าสุด',
+  ],
 };
 
 const sampleTemplateRows = [
@@ -180,7 +222,9 @@ const sampleTemplateRows = [
     'Requested_Date': '',
     'Payment_Date': '',
     'Shipping_Method': '',
+    'วันสินค้าถึง': '',
     'Date_Order / วันที่ลูกค้าชำระเงิน': '',
+    'Last Update': '30/10/26',
   },
   {
     'PI-Supplier': 'HYM25122501-2',
@@ -189,7 +233,7 @@ const sampleTemplateRows = [
     'Link/File': 'https://drive.google.com/sample-file-2.pdf',
     'จำนวนเงิน (Yuan)': '',
     'จำนวนเงิน ($)': '$3,300.00',
-    'ETD': 'รอถึง',
+    'ETD': 'โรงงานกำลังส่งมา',
     'Band': 'ZenSlab',
     'Order_NO.': 'D2609055',
     'File': 'https://drive.google.com/sample-file-2.pdf',
@@ -198,9 +242,19 @@ const sampleTemplateRows = [
     'Requested_Date': '1/7/2027',
     'Payment_Date': '02/10/2026',
     'Shipping_Method': 'Sea Shipping',
+    'วันสินค้าถึง': '14/01/2027',
     'Date_Order / วันที่ลูกค้าชำระเงิน': '02/10/2026',
+    'Last Update': '30/10/26',
   },
 ];
+
+function formatTodayDisplay() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
 
 function normaliseHeader(value: string) {
   return value.replace(/^\uFEFF/, '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -224,7 +278,7 @@ function fromDatabaseRecord(record: DatabasePiRecord): PiRecord {
     linkFileUrl: record.link_file_url || '',
     amountYuan: record.amount_yuan || '',
     amountDollar: record.amount_dollar || '',
-    etd: record.etd || '',
+    etd: (record.etd || '').trim(),
     brand: record.brand || '',
     orderNo: record.order_no || '',
     file: record.file_name || '',
@@ -236,10 +290,21 @@ function fromDatabaseRecord(record: DatabasePiRecord): PiRecord {
     shippingMethod: record.shipping_method || '',
     deliveredDate: record.delivered_date || '',
     dateOrder: record.date_order || '',
+    lastUpdate: record.last_update || '',
   };
 }
 
-function toDatabaseRecord(record: PiRecord, includeNewColumns = true, includeAmounts = true): DatabasePiRecord {
+type DbSerializeOptions = {
+  includeNewColumns?: boolean;
+  includeAmounts?: boolean;
+  includeLastUpdate?: boolean;
+};
+
+function toDatabaseRecord(
+  record: PiRecord,
+  options: DbSerializeOptions = { includeNewColumns: true, includeAmounts: true, includeLastUpdate: true }
+): DatabasePiRecord {
+  const { includeNewColumns = true, includeAmounts = true, includeLastUpdate = true } = options;
   const dbRecord: any = {
     id: record.id,
     pi_supplier: record.piSupplier,
@@ -255,7 +320,7 @@ function toDatabaseRecord(record: PiRecord, includeNewColumns = true, includeAmo
     sale_name: record.saleName,
     project_name: record.projectName,
     payment_date: record.paymentDate,
-    delivered_date: (record as any).deliveredDate || '',
+    delivered_date: record.deliveredDate || '',
     date_order: record.dateOrder,
   };
   if (includeAmounts) {
@@ -266,7 +331,80 @@ function toDatabaseRecord(record: PiRecord, includeNewColumns = true, includeAmo
     dbRecord.requested_date = record.requestedDate || '';
     dbRecord.shipping_method = record.shippingMethod || '';
   }
+  if (includeLastUpdate) {
+    dbRecord.last_update = record.lastUpdate || '';
+  }
   return dbRecord;
+}
+
+const SCHEMA_FALLBACK_TIERS: DbSerializeOptions[] = [
+  { includeNewColumns: true, includeAmounts: true, includeLastUpdate: true },
+  { includeNewColumns: true, includeAmounts: true, includeLastUpdate: false },
+  { includeNewColumns: false, includeAmounts: true, includeLastUpdate: false },
+  { includeNewColumns: false, includeAmounts: false, includeLastUpdate: false },
+];
+
+function isMissingColumnError(error: { message?: string } | null) {
+  const msg = error?.message || '';
+  return (
+    msg.includes('last_update') ||
+    msg.includes('requested_date') ||
+    msg.includes('shipping_method') ||
+    msg.includes('amount_yuan') ||
+    msg.includes('schema cache') ||
+    msg.includes('column')
+  );
+}
+
+async function upsertRecordsWithFallback(targetRecords: PiRecord[]) {
+  let lastError: { message?: string } | null = null;
+  let lastUpdateSkipped = false;
+  for (const tier of SCHEMA_FALLBACK_TIERS) {
+    const payload = targetRecords.map((r) => toDatabaseRecord(r, tier));
+    const { error } = await supabase.from('pi_records').upsert(payload, { onConflict: 'id' });
+    if (!error) {
+      return { error: null, lastUpdateSkipped };
+    }
+    lastError = error;
+    if (!isMissingColumnError(error)) {
+      return { error, lastUpdateSkipped };
+    }
+    if (tier.includeLastUpdate) {
+      lastUpdateSkipped = true;
+    }
+  }
+  return { error: lastError, lastUpdateSkipped };
+}
+
+async function updateRecordWithFallback(record: PiRecord) {
+  const nowIso = new Date().toISOString();
+  let lastError: { message?: string } | null = null;
+  let lastUpdateSkipped = false;
+
+  for (const tier of SCHEMA_FALLBACK_TIERS) {
+    const payload = { ...toDatabaseRecord(record, tier), updated_at: nowIso };
+    const { data, error } = await supabase
+      .from('pi_records')
+      .update(payload)
+      .eq('id', record.id)
+      .select('id');
+
+    if (!error) {
+      if ((data?.length ?? 0) === 0) {
+        return upsertRecordsWithFallback([record]);
+      }
+      return { error: null, lastUpdateSkipped };
+    }
+    lastError = error;
+    if (!isMissingColumnError(error)) {
+      return { error, lastUpdateSkipped };
+    }
+    if (tier.includeLastUpdate) {
+      lastUpdateSkipped = true;
+    }
+  }
+
+  return { error: lastError, lastUpdateSkipped };
 }
 
 const safeUrl = (value?: string) => /^https?:\/\//i.test(value?.trim() || '');
@@ -432,12 +570,79 @@ const initialManualForm: Record<ColumnKey, string> = {
   requestedDate: '',
   paymentDate: '',
   shippingMethod: '',
+  deliveredDate: '',
   dateOrder: '',
+  lastUpdate: '',
 };
 
 export default function PiRecordPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const isMouseDownOnBackdrop = useRef(false);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
+  const [isDraggingTable, setIsDraggingTable] = useState(false);
+
+  const handleTableMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('a, button, input, select, textarea, label')) return;
+    const container = tableScrollRef.current;
+    if (!container) return;
+
+    dragStateRef.current = {
+      active: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+    };
+  };
+
+  useEffect(() => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const drag = dragStateRef.current;
+      const container = tableScrollRef.current;
+      if (!drag.active || !container) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (!drag.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        drag.moved = true;
+        setIsDraggingTable(true);
+        window.getSelection()?.removeAllRanges();
+      }
+      if (!drag.moved) return;
+
+      container.scrollLeft = drag.scrollLeft - dx;
+      container.scrollTop = drag.scrollTop - dy;
+    };
+
+    const handleWindowMouseUp = () => {
+      if (!dragStateRef.current.active) return;
+      dragStateRef.current.active = false;
+      setIsDraggingTable(false);
+      window.setTimeout(() => {
+        dragStateRef.current.moved = false;
+      }, 0);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('blur', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('blur', handleWindowMouseUp);
+    };
+  }, []);
 
   const [records, setRecords] = useState<PiRecord[]>([]);
   const [search, setSearch] = useState('');
@@ -445,6 +650,11 @@ export default function PiRecordPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'manual' | 'upload'>('manual');
   const [manualForm, setManualForm] = useState<Record<ColumnKey, string>>(initialManualForm);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [isManualCustomEtd, setIsManualCustomEtd] = useState(false);
+  const [savingEtdIds, setSavingEtdIds] = useState<Record<string, boolean>>({});
+  const [customEtdEditingId, setCustomEtdEditingId] = useState<string | null>(null);
+  const [customEtdDraft, setCustomEtdDraft] = useState('');
   const [filters, setFilters] = useState<Record<ColumnKey, string>>(() => emptyFilters());
   const [message, setMessage] = useState('');
 
@@ -462,11 +672,21 @@ export default function PiRecordPage() {
       if (e.key === 'Escape' && isImportModalOpen) {
         setIsImportModalOpen(false);
         setPreviewData(null);
+        setEditingRecordId(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isImportModalOpen]);
+
+  const saveLocalRecords = (nextRecords: PiRecord[]) => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(nextRecords));
+    } catch (error) {
+      console.error('Unable to save PI records:', error);
+      setMessage('บันทึกข้อมูลในเบราว์เซอร์ไม่สำเร็จ');
+    }
+  };
 
   // Load records from Supabase / localStorage
   useEffect(() => {
@@ -500,18 +720,7 @@ export default function PiRecordPage() {
       }
 
       // Migrate records previously stored only in this browser on the first load.
-      const migratePayload = savedRecords.map((r) => toDatabaseRecord(r, true, true));
-      let { error: migrateError } = await supabase.from('pi_records').upsert(migratePayload, { onConflict: 'id' });
-      if (migrateError && (migrateError.message?.includes('requested_date') || migrateError.message?.includes('shipping_method') || migrateError.message?.includes('schema cache'))) {
-        const fallbackMigrateWithoutNew = savedRecords.map((r) => toDatabaseRecord(r, false, true));
-        const res = await supabase.from('pi_records').upsert(fallbackMigrateWithoutNew, { onConflict: 'id' });
-        migrateError = res.error;
-      }
-      if (migrateError && (migrateError.message?.includes('amount_yuan') || migrateError.message?.includes('schema cache'))) {
-        const fallbackMigrate = savedRecords.map((r) => toDatabaseRecord(r, false, false));
-        const res = await supabase.from('pi_records').upsert(fallbackMigrate, { onConflict: 'id' });
-        migrateError = res.error;
-      }
+      const { error: migrateError } = await upsertRecordsWithFallback(savedRecords);
       if (migrateError) {
         setRecords(savedRecords);
         setMessage('ย้ายข้อมูลเดิมไปฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -529,28 +738,100 @@ export default function PiRecordPage() {
   // Save records
   const saveRecords = async (nextRecords: PiRecord[]) => {
     setRecords(nextRecords);
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(nextRecords));
-    } catch (error) {
-      console.error('Unable to save PI records:', error);
-      setMessage('บันทึกข้อมูลในเบราว์เซอร์ไม่สำเร็จ');
-    }
-    const fullPayload = nextRecords.map((r) => toDatabaseRecord(r, true, true));
-    let { error } = await supabase.from('pi_records').upsert(fullPayload, { onConflict: 'id' });
-    if (error && (error.message?.includes('requested_date') || error.message?.includes('shipping_method') || error.message?.includes('schema cache'))) {
-      const fallbackWithoutNew = nextRecords.map((r) => toDatabaseRecord(r, false, true));
-      const res = await supabase.from('pi_records').upsert(fallbackWithoutNew, { onConflict: 'id' });
-      error = res.error;
-    }
-    if (error && (error.message?.includes('amount_yuan') || error.message?.includes('schema cache'))) {
-      const fallbackPayload = nextRecords.map((r) => toDatabaseRecord(r, false, false));
-      const res = await supabase.from('pi_records').upsert(fallbackPayload, { onConflict: 'id' });
-      error = res.error;
-    }
+    saveLocalRecords(nextRecords);
+    const { error } = await upsertRecordsWithFallback(nextRecords);
     if (error) {
       console.error('Unable to save PI records to Supabase:', error);
       setMessage('บันทึกลงฐานข้อมูลไม่สำเร็จ ข้อมูลถูกเก็บไว้ในเครื่องนี้ชั่วคราว');
     }
+  };
+
+  const etdDropdownOptions = useMemo(() => {
+    const presetSet = new Set<string>(ETD_STATUS_OPTIONS);
+    const extras = Array.from(
+      new Set(
+        records
+          .map((r) => (r.etd || '').trim())
+          .filter((value) => value && value !== '-' && !presetSet.has(value))
+      )
+    ).sort((a, b) => a.localeCompare(b, 'th'));
+    return [...ETD_STATUS_OPTIONS, ...extras];
+  }, [records]);
+
+  const handleInlineEtdChange = async (record: PiRecord, nextEtdRaw: string) => {
+    if (nextEtdRaw === '__CUSTOM__') {
+      setCustomEtdEditingId(record.id);
+      setCustomEtdDraft((record.etd || '').trim());
+      return;
+    }
+
+    const nextEtd = nextEtdRaw.trim();
+    setCustomEtdEditingId(null);
+    if (nextEtd === (record.etd || '').trim()) {
+      return;
+    }
+
+    const prevRecords = records;
+    const nextLastUpdate = formatTodayDisplay();
+    const updatedRecord: PiRecord = {
+      ...record,
+      etd: nextEtd,
+      lastUpdate: nextLastUpdate,
+    };
+    const nextRecords = records.map((item) => (item.id === record.id ? updatedRecord : item));
+
+    setRecords(nextRecords);
+    saveLocalRecords(nextRecords);
+    setSavingEtdIds((prev) => ({ ...prev, [record.id]: true }));
+
+    try {
+      const { error } = await updateRecordWithFallback(updatedRecord);
+      if (error) {
+        console.error('Unable to update ETD in Supabase:', error);
+        setRecords(prevRecords);
+        saveLocalRecords(prevRecords);
+        setMessage('อัปเดตสถานะ ETD ลงฐานข้อมูลไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือรีเฟรชหน้าแล้วลองใหม่');
+        return;
+      }
+      const labelName = record.piSupplier || record.orderNo || record.supplier || 'รายการ';
+      setMessage(`อัปเดตสถานะ ETD ของ ${labelName} เป็น "${nextEtd || '-'}" เรียบร้อยแล้ว`);
+    } finally {
+      setSavingEtdIds((prev) => {
+        const next = { ...prev };
+        delete next[record.id];
+        return next;
+      });
+    }
+  };
+
+  const openEditModal = (record: PiRecord) => {
+    const trimmedEtd = (record.etd || '').trim();
+    const isPreset = !trimmedEtd || (ETD_STATUS_OPTIONS as readonly string[]).includes(trimmedEtd);
+    setEditingRecordId(record.id);
+    setPreviewData(null);
+    setModalTab('manual');
+    setIsManualCustomEtd(!isPreset);
+    setManualForm({
+      piSupplier: record.piSupplier,
+      date: record.date,
+      supplier: record.supplier,
+      linkFile: record.linkFile,
+      amountYuan: record.amountYuan,
+      amountDollar: record.amountDollar,
+      etd: record.etd,
+      brand: record.brand,
+      orderNo: record.orderNo,
+      file: record.file,
+      saleName: record.saleName,
+      projectName: record.projectName,
+      requestedDate: record.requestedDate,
+      paymentDate: record.paymentDate,
+      shippingMethod: record.shippingMethod,
+      deliveredDate: record.deliveredDate,
+      dateOrder: record.dateOrder,
+      lastUpdate: record.lastUpdate,
+    });
+    setIsImportModalOpen(true);
   };
 
   const handleManualSubmit = async (e: React.FormEvent) => {
@@ -559,22 +840,75 @@ export default function PiRecordPage() {
       setMessage('กรุณากรอกข้อมูลอย่างน้อย เช่น PI-Supplier, Supplier หรือ Order No.');
       return;
     }
-    const newRecord: PiRecord = {
-      id: crypto.randomUUID(),
-      ...manualForm,
-      linkFileUrl: safeUrl(manualForm.linkFile) ? manualForm.linkFile.trim() : '',
-      fileUrl: safeUrl(manualForm.file) ? manualForm.file.trim() : '',
-    };
-    await saveRecords([newRecord, ...records]);
-    setManualForm(initialManualForm);
-    setIsImportModalOpen(false);
-    setMessage('บันทึกข้อมูลรายการใหม่เรียบร้อยแล้ว');
+
+    setIsSaving(true);
+    try {
+      if (editingRecordId) {
+        const existing = records.find((r) => r.id === editingRecordId);
+        if (!existing) return;
+
+        const nextLastUpdate =
+          manualForm.lastUpdate !== existing.lastUpdate
+            ? manualForm.lastUpdate
+            : formatTodayDisplay();
+
+        const updatedRecord: PiRecord = {
+          ...existing,
+          ...manualForm,
+          lastUpdate: nextLastUpdate,
+          linkFileUrl: safeUrl(manualForm.linkFile) ? manualForm.linkFile.trim() : existing.linkFileUrl,
+          fileUrl: safeUrl(manualForm.file) ? manualForm.file.trim() : existing.fileUrl,
+        };
+        const nextRecords = records.map((r) => (r.id === editingRecordId ? updatedRecord : r));
+        setRecords(nextRecords);
+        saveLocalRecords(nextRecords);
+
+        const { error } = await updateRecordWithFallback(updatedRecord);
+        if (error) {
+          console.error('Unable to update PI record in Supabase:', error);
+          setMessage('บันทึกการแก้ไขลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+          return;
+        }
+        setEditingRecordId(null);
+        setManualForm(initialManualForm);
+        setIsManualCustomEtd(false);
+        setIsImportModalOpen(false);
+        setMessage('บันทึกการแก้ไขรายการเรียบร้อยแล้ว');
+        return;
+      }
+
+      const newRecord: PiRecord = {
+        id: crypto.randomUUID(),
+        ...manualForm,
+        lastUpdate: manualForm.lastUpdate.trim() || formatTodayDisplay(),
+        linkFileUrl: safeUrl(manualForm.linkFile) ? manualForm.linkFile.trim() : '',
+        fileUrl: safeUrl(manualForm.file) ? manualForm.file.trim() : '',
+      };
+      await saveRecords([newRecord, ...records]);
+      setManualForm(initialManualForm);
+      setIsManualCustomEtd(false);
+      setIsImportModalOpen(false);
+      setMessage('บันทึกข้อมูลรายการใหม่เรียบร้อยแล้ว');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteRecord = async (id: string) => {
     if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) return;
+    const prevRecords = records;
     const nextRecords = records.filter((r) => r.id !== id);
-    await saveRecords(nextRecords);
+    setRecords(nextRecords);
+    saveLocalRecords(nextRecords);
+
+    const { error } = await supabase.from('pi_records').delete().eq('id', id);
+    if (error) {
+      console.error('Unable to delete PI record from Supabase:', error);
+      setRecords(prevRecords);
+      saveLocalRecords(prevRecords);
+      setMessage('ลบรายการจากฐานข้อมูลไม่สำเร็จ');
+      return;
+    }
     setMessage('ลบรายการเรียบร้อยแล้ว');
   };
 
@@ -793,7 +1127,7 @@ export default function PiRecordPage() {
   );
 
   return (
-    <main className="mx-auto w-full max-w-[1800px] text-slate-800">
+    <main className="w-full text-slate-800">
       {/* ── Page Header ── */}
       <div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end">
         <div>
@@ -850,6 +1184,9 @@ export default function PiRecordPage() {
           <button
             type="button"
             onClick={() => {
+              setEditingRecordId(null);
+              setManualForm(initialManualForm);
+              setIsManualCustomEtd(false);
               setPreviewData(null);
               setModalTab('manual');
               setIsImportModalOpen(true);
@@ -863,6 +1200,7 @@ export default function PiRecordPage() {
           <button
             type="button"
             onClick={() => {
+              setEditingRecordId(null);
               setPreviewData(null);
               setModalTab('upload');
               setIsImportModalOpen(true);
@@ -935,17 +1273,61 @@ export default function PiRecordPage() {
 
       {/* ── Main Table ── */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
-          <h2 className="text-base font-black text-slate-800">รายการ PI</h2>
-          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-400 focus-within:border-blue-400 focus-within:bg-white">
-            <Search size={16} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="ค้นหาทุกรายการ"
-              className="w-full bg-transparent text-sm text-slate-700 outline-none md:w-60"
-            />
-          </label>
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-black text-slate-800">รายการ PI</h2>
+            {filteredRecords.length > 0 && (
+              <span className="text-xs font-semibold text-slate-400">
+                ทั้งหมด {columns.length} คอลัมน์ · คลิกค้างแล้วลากเพื่อเลื่อนตารางได้ (ล็อกคอลัมน์ PI-Supplier ไว้ด้านซ้าย)
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {filteredRecords.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => tableScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' })}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-600 transition hover:bg-slate-100 cursor-pointer"
+                >
+                  ซ้ายสุด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => tableScrollRef.current?.scrollBy({ left: -520, behavior: 'smooth' })}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-100 cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> เลื่อนซ้าย
+                </button>
+                <button
+                  type="button"
+                  onClick={() => tableScrollRef.current?.scrollBy({ left: 520, behavior: 'smooth' })}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-100 cursor-pointer"
+                >
+                  เลื่อนขวา <ChevronRight size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = tableScrollRef.current;
+                    if (el) el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' });
+                  }}
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-bold text-blue-700 transition hover:bg-blue-100 cursor-pointer"
+                >
+                  ขวาสุด (Last Update / จัดการ)
+                </button>
+              </div>
+            )}
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-400 focus-within:border-blue-400 focus-within:bg-white">
+              <Search size={16} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="ค้นหาทุกรายการ"
+                className="w-full bg-transparent text-sm text-slate-700 outline-none md:w-60"
+              />
+            </label>
+          </div>
         </div>
 
         {filteredRecords.length === 0 ? (
@@ -955,38 +1337,111 @@ export default function PiRecordPage() {
             <p className="mt-1 text-xs text-slate-400">อัปโหลดไฟล์ Excel หรือ CSV เพื่อเพิ่มข้อมูลลงในตาราง</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[2100px] border-collapse text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+          <div
+            ref={tableScrollRef}
+            onMouseDown={handleTableMouseDown}
+            onClickCapture={(e) => {
+              if (dragStateRef.current.moved) {
+                e.preventDefault();
+                e.stopPropagation();
+                dragStateRef.current.moved = false;
+              }
+            }}
+            className={`pi-record-scroll ${isDraggingTable ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+          >
+            <table className="w-full min-w-[2050px] border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 text-slate-600">
                 <tr>
                   {columns.map((col) => (
                     <th
                       key={col.key}
-                      className={`whitespace-nowrap border-r border-slate-200 px-3 py-3 font-bold ${
+                      className={`whitespace-nowrap border-r border-slate-200 bg-slate-50 px-2.5 py-2.5 font-bold ${
+                        col.key === 'piSupplier' ? 'sticky left-0 z-30 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.08)]' : ''
+                      } ${
                         (col as any).align === 'right' ? 'text-right' : 'text-left'
                       }`}
                     >
                       {col.label}
                     </th>
                   ))}
-                  <th className="whitespace-nowrap px-3 py-3 font-bold text-center w-16">
+                  <th className="whitespace-nowrap bg-slate-50 px-2.5 py-2.5 font-bold text-center w-24">
                     จัดการ
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredRecords.map((record) => (
-                  <tr key={record.id} className="transition hover:bg-blue-50/40">
+                  <tr key={record.id} className="group transition hover:bg-blue-50/40">
                     {columns.map((col) => {
                       const key = col.key;
                       if (key === 'etd') {
-                        const etdBadge = getEtdBadge(record.etd);
+                        const currentEtd = (record.etd || '').trim();
+                        const etdBadge = getEtdBadge(currentEtd);
+                        const isSavingRow = Boolean(savingEtdIds[record.id]);
+                        const isEditingCustom = customEtdEditingId === record.id;
+
                         return (
-                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-3 align-middle text-slate-600">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${etdBadge.className}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
-                              <span>{etdBadge.label}</span>
-                            </span>
+                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-2.5 py-2.5 align-middle text-slate-600">
+                            {isEditingCustom ? (
+                              <div className="inline-flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={customEtdDraft}
+                                  onChange={(e) => setCustomEtdDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      void handleInlineEtdChange(record, customEtdDraft);
+                                    } else if (e.key === 'Escape') {
+                                      setCustomEtdEditingId(null);
+                                    }
+                                  }}
+                                  placeholder="ระบุสถานะ / วันที่..."
+                                  className="w-40 rounded-lg border border-blue-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 outline-none ring-2 ring-blue-100"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void handleInlineEtdChange(record, customEtdDraft)}
+                                  className="rounded-lg bg-blue-600 p-1 text-white hover:bg-blue-700 cursor-pointer"
+                                  title="บันทึก"
+                                >
+                                  <Check size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomEtdEditingId(null)}
+                                  className="rounded-lg bg-slate-100 p-1 text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                  title="ยกเลิก"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className={`relative inline-flex items-center rounded-lg border transition focus-within:ring-2 focus-within:ring-blue-400/50 ${etdBadge.className}`}>
+                                <span className={`pointer-events-none ml-2.5 h-1.5 w-1.5 rounded-full shrink-0 ${etdBadge.dotClassName}`} />
+                                <select
+                                  aria-label={`เปลี่ยนสถานะ ETD สำหรับ ${record.piSupplier || record.orderNo || record.id}`}
+                                  value={currentEtd}
+                                  disabled={isSavingRow}
+                                  onChange={(e) => void handleInlineEtdChange(record, e.target.value)}
+                                  className="appearance-none bg-transparent py-1 pl-1.5 pr-7 text-xs font-semibold text-inherit outline-none cursor-pointer disabled:cursor-wait"
+                                >
+                                  <option value="" className="bg-white text-slate-500">- ยังไม่ระบุ -</option>
+                                  {etdDropdownOptions.map((option) => (
+                                    <option key={option} value={option} className="bg-white text-slate-800 font-medium">
+                                      {option}
+                                    </option>
+                                  ))}
+                                  <option value="__CUSTOM__" className="bg-slate-50 text-blue-700 font-bold">
+                                    ✏️ พิมพ์สถานะ / วันที่เอง...
+                                  </option>
+                                </select>
+                                <span className="pointer-events-none absolute right-2 flex items-center text-current opacity-70">
+                                  {isSavingRow ? <Loader2 size={12} className="animate-spin" /> : <ChevronDown size={13} />}
+                                </span>
+                              </div>
+                            )}
                           </td>
                         );
                       }
@@ -995,7 +1450,7 @@ export default function PiRecordPage() {
                         const isSea = sm.toLowerCase().includes('sea');
                         const isAir = sm.toLowerCase().includes('air');
                         return (
-                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-3 py-3 align-middle text-slate-600">
+                          <td key={key} className="whitespace-nowrap border-r border-slate-100 px-2.5 py-2.5 align-middle text-slate-600">
                             {sm ? (
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
                                 isSea
@@ -1024,7 +1479,11 @@ export default function PiRecordPage() {
                       return (
                         <td
                           key={key}
-                          className={`max-w-64 border-r border-slate-100 px-3 py-3 align-middle text-slate-600 ${
+                          className={`max-w-44 border-r border-slate-100 px-2.5 py-2.5 align-middle text-slate-600 ${
+                            key === 'piSupplier'
+                              ? 'sticky left-0 z-10 whitespace-nowrap bg-white font-semibold text-slate-800 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.08)] group-hover:bg-slate-50'
+                              : ''
+                          } ${
                             isRight ? 'text-right font-bold text-slate-900 whitespace-nowrap' : ''
                           }`}
                         >
@@ -1047,14 +1506,24 @@ export default function PiRecordPage() {
                       );
                     })}
                     <td className="px-3 py-3 align-middle text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRecord(record.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                        title="ลบรายการนี้"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(record)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                          title="แก้ไขรายการนี้"
+                        >
+                          <Edit3 size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRecord(record.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="ลบรายการนี้"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1080,6 +1549,7 @@ export default function PiRecordPage() {
             if (isMouseDownOnBackdrop.current && e.target === e.currentTarget && !isSaving) {
               setIsImportModalOpen(false);
               setPreviewData(null);
+              setEditingRecordId(null);
             }
             isMouseDownOnBackdrop.current = false;
           }}
@@ -1096,12 +1566,14 @@ export default function PiRecordPage() {
             <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold shadow-sm shrink-0">
-                  {previewData ? <Eye size={20} /> : modalTab === 'manual' ? <Plus size={20} /> : <Upload size={20} />}
+                  {previewData ? <Eye size={20} /> : editingRecordId ? <Edit3 size={20} /> : modalTab === 'manual' ? <Plus size={20} /> : <Upload size={20} />}
                 </div>
                 <div>
                   <h2 id="import-modal-title" className="text-lg font-black text-slate-800">
                     {previewData
                       ? 'ตัวอย่างข้อมูลก่อนนำเข้า (Preview)'
+                      : editingRecordId
+                      ? 'แก้ไขรายการ PI Record'
                       : modalTab === 'manual'
                       ? 'เพิ่มรายการ PI Record ใหม่'
                       : 'นำเข้าข้อมูล PI Record จากไฟล์'}
@@ -1110,14 +1582,14 @@ export default function PiRecordPage() {
                     {previewData
                       ? `ตรวจสอบความถูกต้องของข้อมูลจากไฟล์ ${previewData.fileName}`
                       : modalTab === 'manual'
-                      ? 'กรอกข้อมูล 16 ช่องเรียงลำดับเดียวกับตารางหน้าแสดงผล'
+                      ? `กรอกข้อมูล ${columns.length} ช่องเรียงลำดับเดียวกับตารางหน้าแสดงผล`
                       : 'รองรับไฟล์ Excel (.xlsx, .xls) และ CSV (.csv)'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 self-end sm:self-auto">
-                {!previewData && (
+                {!previewData && !editingRecordId && (
                   <div className="flex bg-slate-200/80 p-1 rounded-xl border border-slate-200">
                     <button
                       type="button"
@@ -1128,7 +1600,7 @@ export default function PiRecordPage() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <Plus size={14} /> กรอกข้อมูล (16 ช่อง)
+                      <Plus size={14} /> กรอกข้อมูล ({columns.length} ช่อง)
                     </button>
                     <button
                       type="button"
@@ -1150,6 +1622,7 @@ export default function PiRecordPage() {
                     if (!isSaving) {
                       setIsImportModalOpen(false);
                       setPreviewData(null);
+                      setEditingRecordId(null);
                     }
                   }}
                   disabled={isSaving}
@@ -1165,11 +1638,11 @@ export default function PiRecordPage() {
             <div className="p-6 overflow-y-auto min-h-0 flex-1">
               {!previewData ? (
                 modalTab === 'manual' ? (
-                  /* ── TAB 1: MANUAL ADD FORM (16 FIELDS) ── */
+                  /* ── TAB 1: MANUAL ADD / EDIT FORM ── */
                   <form onSubmit={handleManualSubmit} className="space-y-4">
                     <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5">
                       <p className="text-xs font-semibold text-blue-800">
-                        กรอกข้อมูลเรียงตามลำดับคอลัมน์ 1-16 (แนวเดียวกับตารางหน้าแสดงผลและแบบฟอร์ม Excel)
+                        กรอกข้อมูลเรียงตามลำดับคอลัมน์ 1-{columns.length} (แนวเดียวกับตารางหน้าแสดงผลและแบบฟอร์ม Excel)
                       </p>
                     </div>
 
@@ -1184,6 +1657,7 @@ export default function PiRecordPage() {
                       {columns.map((col, idx) => {
                         const isAmount = col.key === 'amountYuan' || col.key === 'amountDollar';
                         const isShipping = col.key === 'shippingMethod';
+                        const isEtd = col.key === 'etd';
                         return (
                           <div key={col.key} className="space-y-1">
                             <label className="flex items-center justify-between text-xs font-bold text-slate-700">
@@ -1201,19 +1675,67 @@ export default function PiRecordPage() {
                                   เลือกหรือพิมพ์
                                 </span>
                               )}
+                              {isEtd && (
+                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/60">
+                                  สถานะ / วันที่
+                                </span>
+                              )}
                             </label>
-                            <input
-                              type="text"
-                              list={isShipping ? 'shipping-method-options' : undefined}
-                              value={manualForm[col.key]}
-                              onChange={(e) =>
-                                setManualForm((prev) => ({ ...prev, [col.key]: e.target.value }))
-                              }
-                              placeholder={isShipping ? 'เช่น Sea Shipping, Air Shipping' : `ระบุ ${col.label}...`}
-                              className={`w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 ${
-                                isAmount ? 'text-right font-semibold' : ''
-                              }`}
-                            />
+                            {isEtd ? (
+                              isManualCustomEtd ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={manualForm.etd}
+                                    onChange={(e) =>
+                                      setManualForm((prev) => ({ ...prev, etd: e.target.value }))
+                                    }
+                                    placeholder="ระบุสถานะ หรือ วันที่ ETD..."
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsManualCustomEtd(false)}
+                                    className="shrink-0 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    ดรอปดาวน์
+                                  </button>
+                                </div>
+                              ) : (
+                                <select
+                                  value={manualForm.etd}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__CUSTOM__') {
+                                      setIsManualCustomEtd(true);
+                                    } else {
+                                      setManualForm((prev) => ({ ...prev, etd: e.target.value }));
+                                    }
+                                  }}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                                >
+                                  <option value="">- ยังไม่ระบุ -</option>
+                                  {etdDropdownOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                  <option value="__CUSTOM__">✏️ พิมพ์สถานะ / วันที่เอง...</option>
+                                </select>
+                              )
+                            ) : (
+                              <input
+                                type="text"
+                                list={isShipping ? 'shipping-method-options' : undefined}
+                                value={manualForm[col.key]}
+                                onChange={(e) =>
+                                  setManualForm((prev) => ({ ...prev, [col.key]: e.target.value }))
+                                }
+                                placeholder={isShipping ? 'เช่น Sea Shipping, Air Shipping' : `ระบุ ${col.label}...`}
+                                className={`w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 ${
+                                  isAmount ? 'text-right font-semibold' : ''
+                                }`}
+                              />
+                            )}
                           </div>
                         );
                       })}
@@ -1222,7 +1744,10 @@ export default function PiRecordPage() {
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                       <button
                         type="button"
-                        onClick={() => setManualForm(initialManualForm)}
+                        onClick={() => {
+                          setManualForm(initialManualForm);
+                          setIsManualCustomEtd(false);
+                        }}
                         className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 transition cursor-pointer"
                       >
                         ล้างช่องกรอก
@@ -1230,7 +1755,10 @@ export default function PiRecordPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setIsImportModalOpen(false)}
+                          onClick={() => {
+                            setIsImportModalOpen(false);
+                            setEditingRecordId(null);
+                          }}
                           className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
                         >
                           ยกเลิก
@@ -1240,8 +1768,8 @@ export default function PiRecordPage() {
                           disabled={isSaving}
                           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white shadow-md shadow-blue-200 transition cursor-pointer disabled:opacity-50"
                         >
-                          {isSaving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-                          บันทึกรายการนี้
+                          {isSaving ? <Loader2 size={15} className="animate-spin" /> : editingRecordId ? <Check size={15} /> : <Plus size={15} />}
+                          {editingRecordId ? 'บันทึกการแก้ไข' : 'บันทึกรายการนี้'}
                         </button>
                       </div>
                     </div>
@@ -1258,7 +1786,7 @@ export default function PiRecordPage() {
                       <div>
                         <h3 className="text-sm font-bold text-slate-800">ยังไม่มีรูปแบบไฟล์ที่ถูกต้อง?</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ 16 รายการ พร้อมตัวอย่างการกรอกข้อมูล
+                          ดาวน์โหลดเทมเพลตมาตรฐานที่มีหัวคอลัมน์ครบ {columns.length} รายการ พร้อมตัวอย่างการกรอกข้อมูล
                         </p>
                       </div>
                     </div>
@@ -1330,7 +1858,7 @@ export default function PiRecordPage() {
                   <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/80">
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle2 size={16} className="text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-700">16 หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
+                      <span className="text-xs font-bold text-slate-700">{columns.length} หัวคอลัมน์ที่ระบบรองรับอัตโนมัติ:</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {columns.map(({ label }) => (
@@ -1448,7 +1976,7 @@ export default function PiRecordPage() {
 
                   {/* Preview Table */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs max-h-72 overflow-x-auto overflow-y-auto">
-                    <table className="w-full min-w-[2100px] border-collapse text-left text-xs bg-white">
+                    <table className="w-full min-w-[2350px] border-collapse text-left text-xs bg-white">
                       <thead className="bg-slate-100/90 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
                         <tr>
                           <th className="px-3 py-2.5 font-bold border-r border-slate-200 w-12 text-center text-slate-400">#</th>
