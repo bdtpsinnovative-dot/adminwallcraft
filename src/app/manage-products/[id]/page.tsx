@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { revalidateWallcraftCache } from '@/lib/revalidateWallcraft';
 import { Save, ArrowLeft, Image as ImageIcon, Box, Tag, Trash2, Plus } from 'lucide-react';
 
 export default function EditProductPage() {
@@ -20,6 +21,7 @@ export default function EditProductPage() {
     collection: '',
     image_url: ''
   });
+  const [originalCollection, setOriginalCollection] = useState('');
 
   // State สำหรับข้อมูลลูก (Variants)
   const [variants, setVariants] = useState<any[]>([]);
@@ -48,6 +50,7 @@ export default function EditProductPage() {
         collection: data.collection || '',
         image_url: data.image_url || ''
       });
+      setOriginalCollection(data.collection || '');
       // เรียง variant ตาม ID หรือ SKU หน่อยจะได้ดูง่าย
       const sortedVariants = (data.product_variants || []).sort((a: any, b: any) => 
         (a.sku || '').localeCompare(b.sku || '')
@@ -90,6 +93,12 @@ export default function EditProductPage() {
           alert('❌ ลบตัวเลือกไม่สำเร็จ: ' + error.message);
           return;
         }
+
+        await revalidateWallcraftCache({
+          productId,
+          collection: product.collection,
+          reason: 'delete-variant',
+        });
       } catch (err: any) {
         alert('❌ เกิดข้อผิดพลาดขณะลบ: ' + err.message);
         return;
@@ -130,7 +139,16 @@ export default function EditProductPage() {
     if (error) {
       alert('❌ ลบสินค้าไม่สำเร็จ: ' + error.message);
     } else {
-      alert('✅ ลบสินค้าสำเร็จ!');
+      const collections = Array.from(new Set([originalCollection, product.collection].filter(Boolean)));
+      const cacheResult = await revalidateWallcraftCache({
+        productId,
+        collections,
+        reason: 'delete-product-detail',
+      });
+      const cacheNote = cacheResult.ok
+        ? '\n(ล้างแคชหน้าเว็บอัตโนมัติเรียบร้อย)'
+        : `\n(หมายเหตุ: ${cacheResult.message})`;
+      alert(`✅ ลบสินค้าสำเร็จ!${cacheNote}`);
       router.push('/manage-products');
     }
   };
@@ -159,7 +177,17 @@ export default function EditProductPage() {
         if (varError) throw varError;
       }
 
-      alert('✅ บันทึกการแก้ไขข้อมูลสำเร็จ!');
+      const collections = Array.from(new Set([originalCollection, product.collection].filter(Boolean)));
+      const cacheResult = await revalidateWallcraftCache({
+        productId,
+        collections,
+        reason: 'edit-product',
+      });
+      const cacheNote = cacheResult.ok
+        ? '\n(ล้างแคชหน้าเว็บ Wallcraft อัตโนมัติเรียบร้อย)'
+        : `\n(หมายเหตุ: ${cacheResult.message})`;
+
+      alert(`✅ บันทึกการแก้ไขข้อมูลสำเร็จ!${cacheNote}`);
       fetchProductData(); // reload fresh data
     } catch (error: any) {
       console.error(error);

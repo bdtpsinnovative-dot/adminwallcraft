@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { revalidateWallcraftCache } from '@/lib/revalidateWallcraft';
 import { 
   Search, 
   Edit, 
@@ -19,7 +20,8 @@ import {
   AlertCircle,
   X,
   Loader2,
-  Layers
+  Layers,
+  RefreshCw
 } from 'lucide-react';
 
 export default function ManageProductsPage() {
@@ -30,7 +32,18 @@ export default function ManageProductsPage() {
   const [selectedCollection, setSelectedCollection] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleManualRevalidate = async () => {
+    setIsRevalidating(true);
+    const cacheResult = await revalidateWallcraftCache({ reason: 'manual-manage-products' });
+    setNotification({
+      type: cacheResult.ok ? 'success' : 'error',
+      message: cacheResult.message,
+    });
+    setIsRevalidating(false);
+  };
 
   useEffect(() => {
     fetchProducts();
@@ -143,10 +156,20 @@ export default function ManageProductsPage() {
       if (error) throw error;
 
       const idStr = String(id);
+      const deletedProduct = products.find((p) => String(p.id) === idStr);
+      const cacheResult = await revalidateWallcraftCache({
+        productId: id,
+        collection: deletedProduct?.collection || undefined,
+        reason: 'delete-product',
+      });
+      const cacheNote = cacheResult.ok
+        ? ' • ล้างแคชหน้าเว็บอัตโนมัติเรียบร้อย'
+        : ` • (หมายเหตุ: ${cacheResult.message})`;
+
       setSelectedIds((prev) => prev.filter((i) => i !== idStr));
       setNotification({
         type: 'success',
-        message: `ลบสินค้า "${name}" เรียบร้อยแล้ว`,
+        message: `ลบสินค้า "${name}" เรียบร้อยแล้ว${cacheNote}`,
       });
       fetchProducts();
     } catch (error: any) {
@@ -164,10 +187,19 @@ export default function ManageProductsPage() {
 
     setIsDeleting(true);
     try {
+      const deletedIds = [...selectedIds];
+      const deletedCollections = Array.from(
+        new Set(
+          products
+            .filter((p) => deletedIds.includes(String(p.id)) && p.collection)
+            .map((p) => String(p.collection))
+        )
+      );
+
       // แบ่ง batch ละ 50 รายการ เพื่อป้องกันข้อจำกัดความยาวของ URL ใน Supabase PostgREST
       const chunkSize = 50;
-      for (let i = 0; i < selectedIds.length; i += chunkSize) {
-        const chunk = selectedIds.slice(i, i + chunkSize);
+      for (let i = 0; i < deletedIds.length; i += chunkSize) {
+        const chunk = deletedIds.slice(i, i + chunkSize);
         
         // 1. ลบ variants ลูก
         await supabase.from('product_variants').delete().in('product_id', chunk);
@@ -177,9 +209,18 @@ export default function ManageProductsPage() {
         if (error) throw error;
       }
 
+      const cacheResult = await revalidateWallcraftCache({
+        productIds: deletedIds,
+        collections: deletedCollections,
+        reason: 'bulk-delete-products',
+      });
+      const cacheNote = cacheResult.ok
+        ? ' • ล้างแคชหน้าเว็บอัตโนมัติเรียบร้อย'
+        : ` • (หมายเหตุ: ${cacheResult.message})`;
+
       setNotification({
         type: 'success',
-        message: `ลบสินค้าที่เลือกสำเร็จทั้งหมด ${count} รายการ เรียบร้อยแล้ว`,
+        message: `ลบสินค้าที่เลือกสำเร็จทั้งหมด ${count} รายการ เรียบร้อยแล้ว${cacheNote}`,
       });
       setSelectedIds([]);
       fetchProducts();
@@ -205,7 +246,17 @@ export default function ManageProductsPage() {
             <p className="text-sm text-slate-500 mt-0.5">ค้นหา, แก้ไข หรือเลือกลบสินค้าแบบเดี่ยวและแบบกลุ่มในระบบ Wallcraft</p>
           </div>
         </div>
-        <div className="flex gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={handleManualRevalidate}
+            disabled={isRevalidating}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 disabled:opacity-60 cursor-pointer"
+            title="สั่งล้างแคชหน้าเว็บ Wallcraft ทันที"
+          >
+            <RefreshCw size={16} className={isRevalidating ? 'animate-spin' : ''} />
+            {isRevalidating ? 'กำลังล้างแคช...' : 'ล้างแคชหน้าเว็บ'}
+          </button>
           <Link 
             href="/" 
             className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition-colors border border-slate-200"

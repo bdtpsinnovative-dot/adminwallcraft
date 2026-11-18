@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { supabase } from "@/lib/supabase";
+import { revalidateWallcraftCache } from "@/lib/revalidateWallcraft";
 import { 
   Download, 
   FileSpreadsheet, 
@@ -14,16 +15,28 @@ import {
   CheckCircle2, 
   AlertCircle, 
   X,
-  Layers
+  Layers,
+  RefreshCw
 } from "lucide-react";
 
 export default function BulkImportPage() {
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error" | null; message: string }>({ type: null, message: "" });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleManualRevalidate = async () => {
+    setIsRevalidating(true);
+    const cacheResult = await revalidateWallcraftCache({ reason: "manual-import-page" });
+    setStatus({
+      type: cacheResult.ok ? "success" : "error",
+      message: cacheResult.message,
+    });
+    setIsRevalidating(false);
+  };
 
   // 🛠️ Helpers จัดการข้อมูล
   const parseStr = (val: any) => {
@@ -132,6 +145,8 @@ export default function BulkImportPage() {
       // 2. ส่งเข้า Database
       const productKeys = Object.keys(groups);
       let successCount = 0;
+      const importedProductIds: Array<string | number> = [];
+      const importedCollections = new Set<string>();
 
       for (const key of productKeys) {
         const group = groups[key];
@@ -174,10 +189,26 @@ export default function BulkImportPage() {
           console.error(`❌ Error Variants [${group.name}]:`, varError.message);
         } else {
           successCount++;
+          importedProductIds.push(productId);
+          if (group.collection) {
+            importedCollections.add(group.collection);
+          }
         }
       }
 
-      setStatus({ type: "success", message: `นำเข้าข้อมูลสินค้าสำเร็จ ${successCount} กลุ่มสินค้า (พร้อมอัปเดตข้อมูลแม่-ลูกเรียบร้อย)` });
+      let cacheNote = "";
+      if (successCount > 0) {
+        const cacheResult = await revalidateWallcraftCache({
+          productIds: importedProductIds,
+          collections: Array.from(importedCollections),
+          reason: "import-products",
+        });
+        cacheNote = cacheResult.ok
+          ? " • ล้างแคชหน้าเว็บอัตโนมัติเรียบร้อย"
+          : ` • (หมายเหตุ: ${cacheResult.message})`;
+      }
+
+      setStatus({ type: "success", message: `นำเข้าข้อมูลสินค้าสำเร็จ ${successCount} กลุ่มสินค้า (พร้อมอัปเดตข้อมูลแม่-ลูกเรียบร้อย)${cacheNote}` });
       setParsedData([]); 
     } catch (error: any) {
       console.error(error);
@@ -219,6 +250,16 @@ export default function BulkImportPage() {
           >
             <FileText size={16} /> เทมเพลต CSV (.csv)
           </a>
+          <button
+            type="button"
+            onClick={handleManualRevalidate}
+            disabled={isRevalidating}
+            className="flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 shadow-xs disabled:opacity-60 cursor-pointer"
+            title="สั่งล้างแคชหน้าเว็บ Wallcraft ทันที"
+          >
+            <RefreshCw size={15} className={isRevalidating ? "animate-spin" : ""} />
+            {isRevalidating ? "กำลังล้างแคช..." : "ล้างแคชหน้าเว็บ"}
+          </button>
           <Link 
             href="/manage-products" 
             className="flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition-colors border border-slate-200"
