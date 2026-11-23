@@ -114,6 +114,7 @@ export default function EditProductPage() {
   const handleAddVariant = () => {
     const newVariant = {
       product_id: Number(productId) || productId,
+      odoo_sku: '',
       sku: '',
       pattern: '',
       price: 0,
@@ -303,6 +304,7 @@ export default function EditProductPage() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 sticky top-0 z-10">
                 <tr>
                   <th className="py-3 px-4 font-medium w-16 text-center">รูปภาพ</th>
+                  <th className="py-3 px-4 font-medium text-rose-700">Odoo SKU</th>
                   <th className="py-3 px-4 font-medium">SKU</th>
                   <th className="py-3 px-4 font-medium">Pattern/Color</th>
                   <th className="py-3 px-4 font-medium">Price (฿)</th>
@@ -317,7 +319,7 @@ export default function EditProductPage() {
               <tbody className="divide-y divide-slate-100">
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-slate-400">
+                    <td colSpan={11} className="py-8 text-center text-slate-400">
                       ยังไม่มีรายการตัวเลือกสินค้า กดปุ่ม "+ เพิ่มตัวเลือกสินค้า" เพื่อเพิ่มได้
                     </td>
                   </tr>
@@ -342,6 +344,15 @@ export default function EditProductPage() {
                             <ImageIcon size={18} className="text-slate-300" />
                           )}
                         </div>
+                      </td>
+
+                      {/* Odoo SKU */}
+                      <td className="p-2">
+                        <input 
+                          type="text" value={v.odoo_sku || ''} onChange={(e) => handleVariantChange(idx, 'odoo_sku', e.target.value)}
+                          placeholder="WC-..."
+                          className="w-full min-w-[130px] px-3 py-1.5 border border-rose-200 bg-rose-50/30 rounded focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none font-mono text-xs text-rose-800"
+                        />
                       </td>
 
                       {/* SKU */}

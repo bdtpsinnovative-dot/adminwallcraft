@@ -22,6 +22,7 @@ import { normalizeCompanyName, chooseBestCompanyName, buildMappingLookup, resolv
 interface Props {
   currentUserRole: string;
   currentUserTeamId: string | null;
+  currentUserId?: string;
   profiles: any[];
   projectTypes: any[];
   productCategories: any[];
@@ -122,6 +123,7 @@ const fetchProjectsForRange = async (startIso: string, endIso: string) => {
 export default function DashboardClientContainer({
   currentUserRole,
   currentUserTeamId,
+  currentUserId,
   profiles,
   projectTypes,
   productCategories,
@@ -910,10 +912,10 @@ export default function DashboardClientContainer({
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                <AlertTriangle size={15} className={advanceViewMode === 'backlog' ? 'text-white' : 'text-rose-500'} />
-                <span>วิเคราะห์ & เคลียร์แพลนค้างสะสม (Overdue & Backlog Manager)</span>
-                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                  85 ค้างเลยกำหนด
+                <Clock size={15} className={advanceViewMode === 'backlog' ? 'text-white' : 'text-amber-500'} />
+                <span>วิเคราะห์ & ติดตามแพลนที่ยังไม่เข้าพบ</span>
+                <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                  ยังไม่เข้าพบ
                 </span>
               </button>
             </div>
@@ -921,7 +923,7 @@ export default function DashboardClientContainer({
             <div className="text-xs text-slate-500 font-medium hidden md:block">
               {advanceViewMode === 'weekly'
                 ? '📅 มุมมองปฏิทินวางแผนงานแบบ 12 สัปดาห์'
-                : '🛡️ มุมมองเจาะลึกแพลนที่ค้างสะสม พร้อมระบบซ่อนจากแอปโดยไม่ลบข้อมูล'}
+                : '🛡️ มุมมองติดตามแพลนที่ยังไม่เข้าพบ พร้อมระบบจัดการและซ่อนจากแอป'}
             </div>
           </div>
 
@@ -937,7 +939,9 @@ export default function DashboardClientContainer({
           ) : (
             <VisitPlansBacklogManager
               currentUserRole={currentUserRole}
-              profiles={profiles || []}
+              currentUserTeamId={currentUserTeamId}
+              currentUserId={currentUserId}
+              profiles={visibleSales || []}
               filterSales={filterSales}
             />
           )}

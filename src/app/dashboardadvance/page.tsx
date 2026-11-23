@@ -75,6 +75,7 @@ export default async function DashboardAdvancePage({
         variant="advance"
         currentUserRole={currentUserRole}
         currentUserTeamId={currentUserTeamId}
+        currentUserId={user.id}
         profiles={profiles || []}
         projectTypes={projectTypes || []}
         productCategories={productCategories || []}
