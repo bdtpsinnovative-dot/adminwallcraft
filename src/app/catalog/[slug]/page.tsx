@@ -16,9 +16,8 @@ export default function CatalogSlugPage() {
   const params = useParams();
   const slug   = params?.slug as string;
 
-  // ✅ ส่ง slug ให้ server สร้าง R2 URL เอง — ไม่ต้องใช้ env บน client
-  // ?t= ป้องกัน browser cache ไฟล์เก่า หลัง replace
-  const pdfUrl = `/api/pdf-proxy?slug=${encodeURIComponent(slug)}&t=${Date.now()}`;
+  // ✅ ส่ง slug ให้ server จัดการ conditional caching & ETag (QR Code และ URL เดิมถาวร)
+  const pdfUrl = `/api/pdf-proxy?slug=${encodeURIComponent(slug)}`;
 
   return <EbookViewer pdfUrl={pdfUrl} />;
 }

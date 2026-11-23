@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { unstable_cache, revalidateTag } from 'next/cache';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const S3 = new S3Client({
   region: 'auto',
@@ -10,9 +14,8 @@ const S3 = new S3Client({
   },
 });
 
-// GET — list all catalogs
-export async function GET() {
-  try {
+const getCachedCatalogs = unstable_cache(
+  async () => {
     const res = await S3.send(new ListObjectsV2Command({
       Bucket: process.env.R2_BUCKET_NAME!,
       Prefix: 'ebook/',
@@ -34,6 +37,28 @@ export async function GET() {
       })
       .sort((a, b) => b.lastModified.localeCompare(a.lastModified)); // ใหม่สุดก่อน
 
+    return items;
+  },
+  ['admin-catalogs-list-cache:v1'],
+  {
+    revalidate: 86400, // 24 hours
+    tags: ['catalogs-list'],
+  }
+);
+
+// GET — list all catalogs (พร้อมแคชใน RAM)
+export async function GET(req: NextRequest) {
+  try {
+    const shouldRevalidate = req.nextUrl.searchParams.get('revalidate') === '1';
+    if (shouldRevalidate) {
+      try {
+        revalidateTag('catalogs-list', { expire: 0 });
+      } catch (err) {
+        console.warn('revalidateTag error:', err);
+      }
+    }
+
+    const items = await getCachedCatalogs();
     return NextResponse.json({ success: true, items });
   } catch (err) {
     console.error('List catalogs error:', err);
@@ -51,6 +76,14 @@ export async function DELETE(req: NextRequest) {
       Bucket: process.env.R2_BUCKET_NAME!,
       Key:    `ebook/${slug}.pdf`,
     }));
+
+    // ล้างแคชรายการ catalog ทันที
+    try {
+      revalidateTag('catalogs-list', { expire: 0 });
+    } catch (err) {
+      console.warn('revalidateTag error:', err);
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Delete catalog error:', err);

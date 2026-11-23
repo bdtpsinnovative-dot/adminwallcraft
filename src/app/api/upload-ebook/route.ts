@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { revalidateTag } from 'next/cache';
 
 const S3 = new S3Client({
   region: 'auto',
@@ -32,6 +33,12 @@ export async function POST(request: NextRequest) {
       Body:        buffer,
       ContentType: 'application/pdf',
     }));
+
+    try {
+      revalidateTag('catalogs-list', { expire: 0 });
+    } catch (err) {
+      console.warn('revalidateTag error:', err);
+    }
 
     const publicUrl  = `${process.env.R2_PUBLIC_URL}/${key}`;
     const shareLink  = `/catalog/${slug}`;

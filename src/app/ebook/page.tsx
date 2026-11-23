@@ -104,6 +104,8 @@ export default function EbookPage() {
       });
       if (!uploadRes.ok) { alert('เปลี่ยนไฟล์ไม่สำเร็จ'); return; }
 
+      // ล้างแคชรายการ catalog เพื่อให้อัปเดตวันแก้ไขทันที
+      await fetch('/api/catalogs?revalidate=1').catch(() => {});
       fetchCatalogs();
     } catch {
       alert('ระบบมีปัญหาครับ');
