@@ -1,14 +1,14 @@
 // src/lib/product-analytics-r2.ts
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
-const R2_BUCKET = process.env.R2_BUCKET_NAME || 'wallcraft';
+const R2_BUCKET = (process.env.R2_BUCKET_NAME || 'wallcraft').trim();
 const R2_VIEWS_KEY = 'analytics/product_views.json';
 const R2_LOGS_KEY = 'analytics/engagement_logs.json';
 
 function getR2Client(): S3Client | null {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const accountId = (process.env.R2_ACCOUNT_ID || '').trim();
+  const accessKeyId = (process.env.R2_ACCESS_KEY_ID || '').trim();
+  const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || '').trim();
   if (!accountId || !accessKeyId || !secretAccessKey) {
     return null;
   }

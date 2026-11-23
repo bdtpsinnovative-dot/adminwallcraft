@@ -124,6 +124,14 @@ export default function ProductAnalyticsPage() {
     return () => clearTimeout(timer);
   }, [range, viewerType, searchQuery]);
 
+  // Real-time polling ทุก 10 วินาที เพื่อให้อัปเดตสดอัตโนมัติเมื่อเซลล์หรือลูกค้ากดดู
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAnalytics();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [range, viewerType, searchQuery]);
+
   const handleResetData = async () => {
     if (!window.confirm('⚠️ คุณแน่ใจหรือไม่ว่าต้องการล้างข้อมูลสถิติการเปิดดูทั้งหมดในระบบ? (ไม่สามารถกู้คืนได้)')) {
       return;
