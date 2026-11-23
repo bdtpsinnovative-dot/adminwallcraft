@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, ShoppingCart, Clock, TrendingUp, 
   Calendar, Users, Map as MapIcon, Activity, Star, Target, Database, MapPin, Building2, Scaling,
-  ChevronRight, Smartphone, FileText, Loader2, Folder, Search, Filter as FilterIcon, UserCheck
+  ChevronRight, Smartphone, FileText, Loader2, Folder, Search, Filter as FilterIcon, UserCheck, AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import VipPipelineTable from '@/components/VipPipelineTable';
@@ -15,6 +15,7 @@ import DashboardDateFilter from '@/components/DashboardDateFilter';
 import CompanyCandlestickChart from '@/components/CompanyCandlestickChart';
 import AiChatAssistant from '@/components/AiChatAssistant';
 import WeeklyVisitPlanner from '@/components/WeeklyVisitPlanner';
+import VisitPlansBacklogManager from '@/components/VisitPlansBacklogManager';
 import ExportExcelButton from '@/components/ExportExcelButton';
 import { normalizeCompanyName, chooseBestCompanyName, buildMappingLookup, resolveCompany } from '@/lib/company-utils';
 
@@ -142,6 +143,7 @@ export default function DashboardClientContainer({
   const [repeatedSearch, setRepeatedSearch] = useState('');
   const [repeatedProjectFilter, setRepeatedProjectFilter] = useState<'ALL' | 'HAS_PROJECT' | 'NO_PROJECT'>('ALL');
   const [repeatedMinCount, setRepeatedMinCount] = useState<number>(1);
+  const [advanceViewMode, setAdvanceViewMode] = useState<'weekly' | 'backlog'>('weekly');
 
   // Load from cache on mount
   useEffect(() => {
@@ -883,14 +885,62 @@ export default function DashboardClientContainer({
 
       {variant === 'advance' ? (
         <>
-          <WeeklyVisitPlanner 
-            projectTypes={projectTypes} 
-            productCategories={productCategories} 
-            customerTypes={customerTypes}
-            currentUserRole={currentUserRole}
-            profiles={profiles || []}
-            filterSales={filterSales}
-          />
+          {/* 🎛️ สวิตช์สลับมุมมอง: กระดาน 12 สัปดาห์ VS วิเคราะห์ & เคลียร์แพลนค้างสะสม */}
+          <div className="bg-white border border-slate-200 shadow-sm p-2 mt-8 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAdvanceViewMode('weekly')}
+                className={`px-4 py-2 text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  advanceViewMode === 'weekly'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <Calendar size={15} />
+                <span>กระดานวางแผน 12 สัปดาห์ (Weekly Board)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAdvanceViewMode('backlog')}
+                className={`px-4 py-2 text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  advanceViewMode === 'backlog'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <AlertTriangle size={15} className={advanceViewMode === 'backlog' ? 'text-white' : 'text-rose-500'} />
+                <span>วิเคราะห์ & เคลียร์แพลนค้างสะสม (Overdue & Backlog Manager)</span>
+                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                  85 ค้างเลยกำหนด
+                </span>
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium hidden md:block">
+              {advanceViewMode === 'weekly'
+                ? '📅 มุมมองปฏิทินวางแผนงานแบบ 12 สัปดาห์'
+                : '🛡️ มุมมองเจาะลึกแพลนที่ค้างสะสม พร้อมระบบซ่อนจากแอปโดยไม่ลบข้อมูล'}
+            </div>
+          </div>
+
+          {advanceViewMode === 'weekly' ? (
+            <WeeklyVisitPlanner 
+              projectTypes={projectTypes} 
+              productCategories={productCategories} 
+              customerTypes={customerTypes}
+              currentUserRole={currentUserRole}
+              profiles={profiles || []}
+              filterSales={filterSales}
+            />
+          ) : (
+            <VisitPlansBacklogManager
+              currentUserRole={currentUserRole}
+              profiles={profiles || []}
+              filterSales={filterSales}
+            />
+          )}
           
           <div className="bg-white rounded-none border border-slate-200 shadow-sm overflow-hidden flex flex-col mt-8 w-full">
             <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-50 gap-4">
