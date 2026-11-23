@@ -6,7 +6,7 @@ import {
   Calendar, CheckCircle2, Clock, AlertTriangle, EyeOff, Eye, Search,
   Filter, Users, RefreshCw, ChevronDown, ChevronUp, CheckSquare, Square,
   Building2, FolderKanban, ArrowUpDown, ChevronLeft, ChevronRight,
-  ShieldAlert, Sparkles, BarChart3, Layers, UserCheck, X
+  ShieldAlert, Sparkles, BarChart3, Layers, UserCheck, X, Bot, CalendarPlus
 } from 'lucide-react';
 
 interface Props {
@@ -59,16 +59,24 @@ export default function VisitPlansBacklogManager({
   filterSales = 'ALL',
   onRefreshParent,
 }: Props) {
+  const AUTO_DROP_DAYS = 20; // 🤖 เกณฑ์ซ่อนจากแอปอัตโนมัติเมื่อเลยกำหนดเกิน 20 วัน
+
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<VisitPlanItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSalesId, setSelectedSalesId] = useState<string>(filterSales === 'ALL' ? 'all' : filterSales);
-  const [activeTab, setActiveTab] = useState<'overdue' | 'hidden' | 'pending' | 'completed' | 'all'>('overdue');
+  const [activeTab, setActiveTab] = useState<'overdue_grace' | 'auto_dropped' | 'hidden' | 'upcoming' | 'completed' | 'all'>('overdue_grace');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 20;
+
+  // Reschedule Modal State
+  const [reschedulePlan, setReschedulePlan] = useState<VisitPlanItem | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0];
+  });
 
   // Sync prop filterSales when changed from parent
   useEffect(() => {
@@ -131,32 +139,47 @@ export default function VisitPlansBacklogManager({
     return Math.max(0, diffDays);
   };
 
-  // Effective status classification
-  const getPlanCategory = (plan: VisitPlanItem): 'overdue' | 'hidden' | 'pending' | 'completed' => {
+  // Effective status classification with 20-day rule
+  const getPlanCategory = (plan: VisitPlanItem): 'overdue_grace' | 'auto_dropped' | 'hidden' | 'upcoming' | 'completed' => {
     if (plan.status === 'cancelled') return 'hidden';
     if (plan.status === 'completed') return 'completed';
-    if (isOverdue(plan)) return 'overdue';
-    return 'pending';
+    if (isOverdue(plan)) {
+      const days = getOverdueDays(plan.planned_date);
+      if (days > AUTO_DROP_DAYS) return 'auto_dropped';
+      return 'overdue_grace';
+    }
+    return 'upcoming';
   };
 
   // Summary Metrics
   const summary = useMemo(() => {
     let total = plans.length;
     let completed = 0;
-    let overdue = 0;
-    let hidden = 0;
+    let overdueGrace = 0;
+    let autoDropped = 0;
+    let hiddenManual = 0;
     let upcoming = 0;
 
     plans.forEach(p => {
       const cat = getPlanCategory(p);
       if (cat === 'completed') completed++;
-      else if (cat === 'hidden') hidden++;
-      else if (cat === 'overdue') overdue++;
+      else if (cat === 'hidden') hiddenManual++;
+      else if (cat === 'auto_dropped') autoDropped++;
+      else if (cat === 'overdue_grace') overdueGrace++;
       else upcoming++;
     });
 
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { total, completed, overdue, hidden, upcoming, completionRate };
+    return {
+      total,
+      completed,
+      overdueGrace,
+      autoDropped,
+      hiddenManual,
+      upcoming,
+      completionRate,
+      totalHidden: autoDropped + hiddenManual,
+    };
   }, [plans]);
 
   // Sales Leaderboard Breakdown
@@ -168,13 +191,13 @@ export default function VisitPlansBacklogManager({
       avatarUrl?: string;
       total: number;
       completed: number;
-      overdue: number;
-      hidden: number;
+      overdueGrace: number;
+      autoDropped: number;
+      hiddenManual: number;
       upcoming: number;
       completionRate: number;
     }>();
 
-    // Populate from profiles prop if available
     profiles.forEach(pr => {
       if (!map.has(pr.id)) {
         map.set(pr.id, {
@@ -184,8 +207,9 @@ export default function VisitPlansBacklogManager({
           avatarUrl: pr.avatar_url,
           total: 0,
           completed: 0,
-          overdue: 0,
-          hidden: 0,
+          overdueGrace: 0,
+          autoDropped: 0,
+          hiddenManual: 0,
           upcoming: 0,
           completionRate: 0,
         });
@@ -203,8 +227,9 @@ export default function VisitPlansBacklogManager({
           avatarUrl: pObj?.avatar_url,
           total: 0,
           completed: 0,
-          overdue: 0,
-          hidden: 0,
+          overdueGrace: 0,
+          autoDropped: 0,
+          hiddenManual: 0,
           upcoming: 0,
           completionRate: 0,
         });
@@ -214,8 +239,9 @@ export default function VisitPlansBacklogManager({
       stat.total++;
       const cat = getPlanCategory(p);
       if (cat === 'completed') stat.completed++;
-      else if (cat === 'hidden') stat.hidden++;
-      else if (cat === 'overdue') stat.overdue++;
+      else if (cat === 'hidden') stat.hiddenManual++;
+      else if (cat === 'auto_dropped') stat.autoDropped++;
+      else if (cat === 'overdue_grace') stat.overdueGrace++;
       else stat.upcoming++;
     });
 
@@ -224,9 +250,11 @@ export default function VisitPlansBacklogManager({
       s.completionRate = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
     });
 
-    // Sort by Overdue desc, then Total desc
+    // Sort by AutoDropped + OverdueGrace desc, then Total desc
     return list.sort((a, b) => {
-      if (b.overdue !== a.overdue) return b.overdue - a.overdue;
+      const pendingA = a.autoDropped + a.overdueGrace;
+      const pendingB = b.autoDropped + b.overdueGrace;
+      if (pendingB !== pendingA) return pendingB - pendingA;
       return b.total - a.total;
     });
   }, [plans, profiles]);
@@ -241,9 +269,10 @@ export default function VisitPlansBacklogManager({
 
       // Tab filter
       const cat = getPlanCategory(plan);
-      if (activeTab === 'overdue' && cat !== 'overdue') return false;
+      if (activeTab === 'overdue_grace' && cat !== 'overdue_grace') return false;
+      if (activeTab === 'auto_dropped' && cat !== 'auto_dropped') return false;
       if (activeTab === 'hidden' && cat !== 'hidden') return false;
-      if (activeTab === 'pending' && cat !== 'pending') return false;
+      if (activeTab === 'upcoming' && cat !== 'upcoming') return false;
       if (activeTab === 'completed' && cat !== 'completed') return false;
 
       // Search query
@@ -285,14 +314,39 @@ export default function VisitPlansBacklogManager({
 
       if (error) throw error;
 
-      // Update local state
       setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: newStatus } : p));
       
-      const label = newStatus === 'cancelled' ? 'ซ่อนจากแอปแล้ว (ไม่แสดงในแอป)' : newStatus === 'pending' ? 'นำกลับมาแสดงในแอปแล้ว' : 'บันทึกเป็นเข้าพบสำเร็จแล้ว';
+      const label = newStatus === 'cancelled' ? 'ซ่อนจากแอปแล้ว (ไม่แสดงในแอป)' : newStatus === 'pending' ? 'ดึงกลับมาแสดงในแอปแล้ว' : 'บันทึกเป็นเข้าพบสำเร็จแล้ว';
       showToast(`✅ ${label}`);
       if (onRefreshParent) onRefreshParent();
     } catch (err: any) {
       alert(`เกิดข้อผิดพลาด: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Handle Reschedule
+  const handleConfirmReschedule = async () => {
+    if (!reschedulePlan || !rescheduleDate) return;
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('visit_plans')
+        .update({
+          planned_date: rescheduleDate,
+          status: 'pending',
+        })
+        .eq('id', reschedulePlan.id);
+
+      if (error) throw error;
+
+      setPlans(prev => prev.map(p => p.id === reschedulePlan.id ? { ...p, planned_date: rescheduleDate, status: 'pending' } : p));
+      setReschedulePlan(null);
+      showToast(`🎉 เลื่อนนัดไปเป็นวันที่ ${rescheduleDate} เรียบร้อยแล้ว! แพลนจะเด้งกลับไปแสดงในแอปทันที`);
+      if (onRefreshParent) onRefreshParent();
+    } catch (err: any) {
+      alert(`เกิดข้อผิดพลาดในการเลื่อนนัด: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -321,7 +375,6 @@ export default function VisitPlansBacklogManager({
 
       if (error) throw error;
 
-      // Update local state
       setPlans(prev => prev.map(p => ids.includes(p.id) ? { ...p, status: newStatus } : p));
       setSelectedIds(new Set());
       showToast(`🎉 ดำเนินการ "${actionLabel}" ให้ ${ids.length} รายการเรียบร้อยแล้ว!`);
@@ -333,7 +386,6 @@ export default function VisitPlansBacklogManager({
     }
   };
 
-  // Select all / Deselect all on current page
   const handleToggleSelectAll = () => {
     const pageIds = paginatedPlans.map(p => p.id);
     const allSelected = pageIds.every(id => selectedIds.has(id));
@@ -367,22 +419,92 @@ export default function VisitPlansBacklogManager({
         </div>
       )}
 
+      {/* Reschedule Modal */}
+      {reschedulePlan && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CalendarPlus className="text-indigo-600" size={20} />
+                <h3 className="font-bold text-slate-900 text-base">เลื่อนวันนัดหมาย (Reschedule)</h3>
+              </div>
+              <button onClick={() => setReschedulePlan(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3 text-xs">
+              <div>
+                <span className="text-slate-500 font-medium">บริษัทลูกค้า:</span>
+                <span className="font-bold text-slate-800 ml-1.5">{reschedulePlan.companies?.name || '-'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-medium">เซลส์:</span>
+                <span className="font-bold text-slate-800 ml-1.5">{reschedulePlan.profiles?.full_name || '-'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-medium">วันนัดเดิม:</span>
+                <span className="font-bold text-rose-600 ml-1.5">{reschedulePlan.planned_date?.split('T')[0]}</span>
+              </div>
+
+              <div className="pt-2">
+                <label className="block text-slate-700 font-bold mb-1.5">
+                  เลือกวันนัดหมายใหม่ (แพลนจะกลับไปแสดงในแอปทันที):
+                </label>
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-[11px] leading-relaxed">
+                💡 <b>คำแนะนำ:</b> เมื่อเลื่อนวันมาเป็นปัจจุบันหรือในอนาคต ระบบจะยกเลิกการซ่อนและดึงแพลนนี้กลับไปแสดงในแอปมือถือของเซลส์ทันที!
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setReschedulePlan(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleConfirmReschedule}
+                disabled={isProcessing}
+                className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 size={14} />
+                <span>ยืนยันเลื่อนนัด</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-lg">
-              <ShieldAlert className="text-indigo-400" size={20} />
+              <Bot className="text-indigo-400" size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2 flex-wrap">
                 ระบบวิเคราะห์ & เคลียร์ยอดแพลนค้างสะสม
-                <span className="bg-rose-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                  {summary.overdue} ค้างเลยกำหนด
+                <span className="bg-indigo-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                  <Bot size={12} />
+                  สูตรคำนวณออโต้ 20 วัน
+                </span>
+                <span className="bg-slate-700 text-slate-200 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                  ซ่อนออโต้แล้ว {summary.autoDropped} แพลน
                 </span>
               </h2>
               <p className="text-xs text-indigo-200/80 mt-0.5">
-                ติดตามแพลนที่เลยกำหนด/ไม่สำเร็จของเซลล์แต่ละคน ปลดล็อกการซ่อนจากแอปเพื่อไม่ให้รกหน้าจอมือถือ (โดยไม่ลบข้อมูลออกจากฐานข้อมูล)
+                แพลนที่เลยกำหนดเกิน 20 วันและไม่มีการเช็คอิน ระบบจะ <b>ซ่อนจากแอปมือถืออัตโนมัติ</b> ทันที เพื่อไม่ให้รกหน้าจอเซลส์ (ข้อมูลไม่ถูกลบออกจากระบบ)
               </p>
             </div>
           </div>
@@ -420,22 +542,25 @@ export default function VisitPlansBacklogManager({
           <div className="text-[11px] text-emerald-600 font-semibold mt-1">คิดเป็น {summary.completionRate}% ของทั้งหมด</div>
         </div>
 
-        <div className="bg-white p-4 border border-rose-300 shadow-sm bg-gradient-to-br from-white to-rose-50/40">
-          <div className="flex items-center justify-between text-rose-700 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">เลยกำหนดค้างเคลียร์</span>
-            <AlertTriangle size={16} className="text-rose-500" />
-          </div>
-          <div className="text-2xl font-black text-rose-600">{summary.overdue}</div>
-          <div className="text-[11px] text-rose-600 font-semibold mt-1">ต้องจัดการเคลียร์หรือซ่อน</div>
-        </div>
-
         <div className="bg-white p-4 border border-slate-300 shadow-sm bg-gradient-to-br from-white to-slate-100/50">
           <div className="flex items-center justify-between text-slate-700 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">ไม่แสดงในแอปแล้ว</span>
+            <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+              <Bot size={13} className="text-indigo-600" />
+              ซ่อนออโต้ (&gt;20 วัน)
+            </span>
             <EyeOff size={16} className="text-slate-500" />
           </div>
-          <div className="text-2xl font-black text-slate-700">{summary.hidden}</div>
-          <div className="text-[11px] text-slate-500 font-semibold mt-1">เก็บเข้ากรุ ไม่รกในแอป</div>
+          <div className="text-2xl font-black text-slate-700">{summary.autoDropped}</div>
+          <div className="text-[11px] text-indigo-600 font-semibold mt-1">ตัดออกจากแอปมือถือแล้ว</div>
+        </div>
+
+        <div className="bg-white p-4 border border-rose-300 shadow-sm bg-gradient-to-br from-white to-rose-50/40">
+          <div className="flex items-center justify-between text-rose-700 mb-1">
+            <span className="text-xs font-bold uppercase tracking-wider">ค้างในแอป (&le;20 วัน)</span>
+            <AlertTriangle size={16} className="text-rose-500" />
+          </div>
+          <div className="text-2xl font-black text-rose-600">{summary.overdueGrace}</div>
+          <div className="text-[11px] text-rose-600 font-semibold mt-1">อยู่ในช่วงผ่อนปรนให้ตาม</div>
         </div>
 
         <div className="bg-white p-4 border border-amber-200 shadow-sm col-span-2 lg:col-span-1">
@@ -476,10 +601,16 @@ export default function VisitPlansBacklogManager({
               <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                 <th className="py-2.5 px-3 w-10 text-center">#</th>
                 <th className="py-2.5 px-3 min-w-[180px]">ชื่อเซลส์</th>
-                <th className="py-2.5 px-3 min-w-[200px]">สัดส่วนความคืบหน้า (Progress)</th>
+                <th className="py-2.5 px-3 min-w-[200px]">สัดส่วนสถานะแพลนงาน</th>
                 <th className="py-2.5 px-3 text-center">สำเร็จ</th>
-                <th className="py-2.5 px-3 text-center text-rose-600 bg-rose-50/50">ค้างเลยกำหนด ⚠️</th>
-                <th className="py-2.5 px-3 text-center text-slate-600">ซ่อนจากแอป</th>
+                <th className="py-2.5 px-3 text-center text-slate-700 bg-slate-100/60">
+                  <span className="flex items-center justify-center gap-1">
+                    <Bot size={11} className="text-indigo-600" />
+                    ซ่อนออโต้ (&gt;20ว.)
+                  </span>
+                </th>
+                <th className="py-2.5 px-3 text-center text-rose-600 bg-rose-50/50">ค้างในแอป (&le;20ว.)</th>
+                <th className="py-2.5 px-3 text-center text-slate-500">ซ่อนเอง</th>
                 <th className="py-2.5 px-3 text-center">รอพบ</th>
                 <th className="py-2.5 px-3 text-center">รวมทั้งหมด</th>
                 <th className="py-2.5 px-3 text-right">ความสำเร็จ</th>
@@ -524,18 +655,18 @@ export default function VisitPlansBacklogManager({
                             title={`สำเร็จ: ${sale.completed}`}
                           />
                         )}
-                        {sale.overdue > 0 && (
+                        {sale.overdueGrace > 0 && (
                           <div
                             className="bg-rose-500"
-                            style={{ width: `${(sale.overdue / sale.total) * 100}%` }}
-                            title={`ค้างเลยกำหนด: ${sale.overdue}`}
+                            style={{ width: `${(sale.overdueGrace / sale.total) * 100}%` }}
+                            title={`ค้างในแอป (<=20 วัน): ${sale.overdueGrace}`}
                           />
                         )}
-                        {sale.hidden > 0 && (
+                        {sale.autoDropped > 0 && (
                           <div
                             className="bg-slate-400"
-                            style={{ width: `${(sale.hidden / sale.total) * 100}%` }}
-                            title={`ซ่อนจากแอป: ${sale.hidden}`}
+                            style={{ width: `${(sale.autoDropped / sale.total) * 100}%` }}
+                            title={`ซ่อนออโต้ (>20 วัน): ${sale.autoDropped}`}
                           />
                         )}
                         {sale.upcoming > 0 && (
@@ -548,17 +679,26 @@ export default function VisitPlansBacklogManager({
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-center font-bold text-emerald-600">{sale.completed}</td>
-                    <td className="py-2.5 px-3 text-center font-black text-rose-600 bg-rose-50/50">
-                      {sale.overdue > 0 ? (
-                        <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full text-[11px]">
-                          {sale.overdue}
+                    <td className="py-2.5 px-3 text-center font-bold text-slate-700 bg-slate-100/60">
+                      {sale.autoDropped > 0 ? (
+                        <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded-full text-[11px]">
+                          {sale.autoDropped}
                         </span>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-center font-bold text-slate-500">
-                      {sale.hidden > 0 ? sale.hidden : '-'}
+                    <td className="py-2.5 px-3 text-center font-black text-rose-600 bg-rose-50/50">
+                      {sale.overdueGrace > 0 ? (
+                        <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full text-[11px]">
+                          {sale.overdueGrace}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-slate-400">
+                      {sale.hiddenManual > 0 ? sale.hiddenManual : '-'}
                     </td>
                     <td className="py-2.5 px-3 text-center text-amber-700">{sale.upcoming}</td>
                     <td className="py-2.5 px-3 text-center font-bold text-slate-900">{sale.total}</td>
@@ -580,25 +720,42 @@ export default function VisitPlansBacklogManager({
         </div>
       </div>
 
-      {/* Section 2: Detailed Drill-Down Table with Tabs & Batch Actions */}
+      {/* Section 2: Detailed Drill-Down Table with Tabs & Actions */}
       <div className="p-5 bg-slate-50 flex-1">
         {/* Filter Tabs */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-200 pb-3">
           <div className="flex flex-wrap gap-1.5">
             <button
-              onClick={() => { setActiveTab('overdue'); setCurrentPage(1); }}
+              onClick={() => { setActiveTab('overdue_grace'); setCurrentPage(1); }}
               className={`px-3 py-1.5 text-xs font-bold rounded-t flex items-center gap-1.5 transition cursor-pointer ${
-                activeTab === 'overdue'
+                activeTab === 'overdue_grace'
                   ? 'bg-rose-600 text-white shadow-sm'
                   : 'bg-white text-slate-600 hover:bg-rose-50 border border-slate-200'
               }`}
             >
               <AlertTriangle size={13} />
-              <span>เลยกำหนดค้างเคลียร์</span>
+              <span>ค้างในแอป (&le; 20 วัน)</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                activeTab === 'overdue' ? 'bg-white text-rose-600' : 'bg-rose-100 text-rose-700'
+                activeTab === 'overdue_grace' ? 'bg-white text-rose-600' : 'bg-rose-100 text-rose-700'
               }`}>
-                {summary.overdue}
+                {summary.overdueGrace}
+              </span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab('auto_dropped'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 text-xs font-bold rounded-t flex items-center gap-1.5 transition cursor-pointer ${
+                activeTab === 'auto_dropped'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Bot size={13} className="text-indigo-400" />
+              <span>ซ่อนออโต้แล้ว (&gt; 20 วัน)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                activeTab === 'auto_dropped' ? 'bg-white text-slate-800' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {summary.autoDropped}
               </span>
             </button>
 
@@ -606,32 +763,24 @@ export default function VisitPlansBacklogManager({
               onClick={() => { setActiveTab('hidden'); setCurrentPage(1); }}
               className={`px-3 py-1.5 text-xs font-bold rounded-t flex items-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'hidden'
-                  ? 'bg-slate-800 text-white shadow-sm'
+                  ? 'bg-slate-700 text-white shadow-sm'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
               <EyeOff size={13} />
-              <span>ไม่แสดงในแอปแล้ว (ซ่อนแล้ว)</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                activeTab === 'hidden' ? 'bg-white text-slate-800' : 'bg-slate-200 text-slate-700'
-              }`}>
-                {summary.hidden}
-              </span>
+              <span>ปิดงาน/ซ่อนเอง ({summary.hiddenManual})</span>
             </button>
 
             <button
-              onClick={() => { setActiveTab('pending'); setCurrentPage(1); }}
+              onClick={() => { setActiveTab('upcoming'); setCurrentPage(1); }}
               className={`px-3 py-1.5 text-xs font-bold rounded-t flex items-center gap-1.5 transition cursor-pointer ${
-                activeTab === 'pending'
+                activeTab === 'upcoming'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'bg-white text-slate-600 hover:bg-amber-50 border border-slate-200'
               }`}
             >
               <Clock size={13} />
-              <span>รอพบในอนาคต</span>
-              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.2 rounded-full text-[10px]">
-                {summary.upcoming}
-              </span>
+              <span>รอพบในอนาคต ({summary.upcoming})</span>
             </button>
 
             <button
@@ -643,10 +792,7 @@ export default function VisitPlansBacklogManager({
               }`}
             >
               <CheckCircle2 size={13} />
-              <span>สำเร็จแล้ว</span>
-              <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded-full text-[10px]">
-                {summary.completed}
-              </span>
+              <span>สำเร็จแล้ว ({summary.completed})</span>
             </button>
 
             <button
@@ -695,16 +841,7 @@ export default function VisitPlansBacklogManager({
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow-sm flex items-center gap-1.5 transition cursor-pointer"
               >
                 <EyeOff size={13} />
-                <span>ซ่อนจากแอปทั้งหมดที่เลือก (ไม่แสดงในแอปแล้ว)</span>
-              </button>
-
-              <button
-                onClick={() => handleBatchUpdate('pending')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded shadow-sm flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <Eye size={13} />
-                <span>ดึงกลับมาแสดงในแอป</span>
+                <span>ซ่อนจากแอปทั้งหมดที่เลือก</span>
               </button>
 
               <button
@@ -739,13 +876,13 @@ export default function VisitPlansBacklogManager({
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                   />
                 </th>
-                <th className="py-2.5 px-3 min-w-[130px]">วันที่นัดหมายเดิม</th>
+                <th className="py-2.5 px-3 min-w-[130px]">วันนัดหมายเดิม</th>
                 <th className="py-2.5 px-3 min-w-[140px]">เซลส์ผู้รับผิดชอบ</th>
                 <th className="py-2.5 px-3 min-w-[180px]">บริษัทลูกค้า</th>
                 <th className="py-2.5 px-3 min-w-[180px]">โครงการ / Concept</th>
                 <th className="py-2.5 px-3 min-w-[120px]">หมวดหมู่สินค้า</th>
-                <th className="py-2.5 px-3 text-center min-w-[140px]">สถานะปัจจุบัน</th>
-                <th className="py-2.5 px-3 text-right min-w-[160px]">จัดการสถานะ (Actions)</th>
+                <th className="py-2.5 px-3 text-center min-w-[160px]">สถานะการแสดงผล</th>
+                <th className="py-2.5 px-3 text-right min-w-[200px]">จัดการ (Actions)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -775,7 +912,7 @@ export default function VisitPlansBacklogManager({
                     <tr
                       key={plan.id}
                       className={`hover:bg-slate-50 transition ${
-                        isChecked ? 'bg-indigo-50/50' : cat === 'hidden' ? 'bg-slate-50/60 opacity-75' : ''
+                        isChecked ? 'bg-indigo-50/50' : cat === 'auto_dropped' || cat === 'hidden' ? 'bg-slate-50/60 opacity-80' : ''
                       }`}
                     >
                       <td className="py-2.5 px-3 text-center">
@@ -791,8 +928,10 @@ export default function VisitPlansBacklogManager({
                         <div className="font-bold text-slate-800">
                           {plan.planned_date ? plan.planned_date.split('T')[0] : '-'}
                         </div>
-                        {cat === 'overdue' && (
-                          <div className="text-[10px] font-black text-rose-600 mt-0.5 flex items-center gap-1">
+                        {(cat === 'auto_dropped' || cat === 'overdue_grace') && (
+                          <div className={`text-[10px] font-black mt-0.5 flex items-center gap-1 ${
+                            cat === 'auto_dropped' ? 'text-slate-500' : 'text-rose-600'
+                          }`}>
                             <Clock size={11} />
                             <span>เลยมาแล้ว {overdueDays} วัน</span>
                           </div>
@@ -835,15 +974,20 @@ export default function VisitPlansBacklogManager({
                       </td>
 
                       <td className="py-2.5 px-3 text-center">
-                        {cat === 'hidden' ? (
+                        {cat === 'auto_dropped' ? (
+                          <span className="bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1" title="เลยกำหนดเกิน 20 วัน ระบบคำนวณซ่อนจากแอปมือถืออัตโนมัติ">
+                            <Bot size={12} className="text-indigo-600" />
+                            <span>ซ่อนออโต้ (&gt;20 วัน)</span>
+                          </span>
+                        ) : cat === 'hidden' ? (
                           <span className="bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1">
                             <EyeOff size={11} />
-                            <span>ไม่แสดงในแอปแล้ว</span>
+                            <span>ปิดงาน/ซ่อนเอง</span>
                           </span>
-                        ) : cat === 'overdue' ? (
-                          <span className="bg-rose-100 text-rose-700 border border-rose-300 px-2.5 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1 animate-pulse">
+                        ) : cat === 'overdue_grace' ? (
+                          <span className="bg-rose-100 text-rose-700 border border-rose-300 px-2.5 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1 animate-pulse" title="เลยกำหนดไม่เกิน 20 วัน ยังคงแสดงในแอปเพื่อให้เซลส์ตามผล">
                             <AlertTriangle size={11} />
-                            <span>เลยกำหนด (ค้าง)</span>
+                            <span>ค้างในแอป (&le;20 วัน)</span>
                           </span>
                         ) : cat === 'completed' ? (
                           <span className="bg-emerald-100 text-emerald-700 border border-emerald-300 px-2.5 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1">
@@ -859,13 +1003,27 @@ export default function VisitPlansBacklogManager({
                       </td>
 
                       <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* ปุ่มเลื่อนนัดเพื่อเปิดกลับมาทำต่อ */}
+                          <button
+                            onClick={() => {
+                              setReschedulePlan(plan);
+                              setRescheduleDate(new Date().toISOString().split('T')[0]);
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold rounded shadow-sm inline-flex items-center gap-1 transition cursor-pointer"
+                            title="เลื่อนวันนัดหมายใหม่ (จะเด้งกลับไปแสดงในแอปทันที)"
+                          >
+                            <CalendarPlus size={12} />
+                            <span>เลื่อนนัด</span>
+                          </button>
+
+                          {/* สลับซ่อน/แสดงแมนนวล */}
                           {cat === 'hidden' ? (
                             <button
                               onClick={() => handleUpdateStatus(plan.id, 'pending')}
                               disabled={isProcessing}
-                              className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold rounded shadow-sm inline-flex items-center gap-1 transition cursor-pointer"
-                              title="ดึงกลับมาแสดงในแอปมือถือของเซลส์"
+                              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold rounded shadow-sm inline-flex items-center gap-1 transition cursor-pointer"
+                              title="ดึงกลับมาแสดงในแอป"
                             >
                               <Eye size={12} />
                               <span>แสดงในแอป</span>
@@ -874,11 +1032,11 @@ export default function VisitPlansBacklogManager({
                             <button
                               onClick={() => handleUpdateStatus(plan.id, 'cancelled')}
                               disabled={isProcessing}
-                              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold rounded shadow-sm inline-flex items-center gap-1 transition cursor-pointer"
-                              title="ซ่อนจากแอปมือถือของเซลส์ (ไม่ลบข้อมูลออกจากฐานข้อมูล)"
+                              className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-500 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center gap-1 transition cursor-pointer"
+                              title="ซ่อนจากแอปทันที"
                             >
-                              <EyeOff size={12} className="text-slate-500" />
-                              <span>ซ่อนจากแอป</span>
+                              <EyeOff size={11} />
+                              <span>ซ่อน</span>
                             </button>
                           )}
 
